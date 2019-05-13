@@ -13,7 +13,6 @@ examples_dir = join(cwd, "..", "..", "examples")
 compressible_examples = ["compressible_eady.py",
                          "dense_bubble.py",
                          "dry_bf_bubble.py",
-                         "h_mountain.py",
                          "moist_bf_bubble.py",
                          "nh_mountain.py",
                          "rising_bubble.py",
