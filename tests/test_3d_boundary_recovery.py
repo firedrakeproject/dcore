@@ -12,13 +12,13 @@ import numpy as np
 
 def setup_3d_recovery(dirname):
 
-    L = 100.
-    H = 10.
-    W = 1.
+    L = 3.
+    H = 3.
+    W = 3.
 
-    deltax = L / 5.
-    deltay = W / 5.
-    deltaz = H / 5.
+    deltax = L / 3.
+    deltay = W / 3.
+    deltaz = H / 3.
     nlayers = int(H/deltaz)
     ncolumnsx = int(L/deltax)
     ncolumnsy = int(W/deltay)
@@ -72,9 +72,9 @@ def setup_3d_recovery(dirname):
     rho_Vt = Function(Vt)
 
     # make the recoverers and do the recovery
-    rho_recoverer = Recoverer(rho_DG0, rho_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics)
-    theta_recoverer = Recoverer(theta_Vt, theta_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics)
-    v_recoverer = Recoverer(v_Vu, v_CG1, VDG=VuDG1, boundary_method=Boundary_Method.dynamics)
+    rho_recoverer = Recoverer(rho_DG0, rho_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics_rho)
+    theta_recoverer = Recoverer(theta_Vt, theta_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics_theta)
+    v_recoverer = Recoverer(v_Vu, v_CG1, VDG=VuDG1, boundary_method=Boundary_Method.dynamics_u)
     rho_Vt_recoverer = Recoverer(rho_DG0, rho_Vt, VDG=Vt_brok, boundary_method=Boundary_Method.physics)
 
     rho_recoverer.project()

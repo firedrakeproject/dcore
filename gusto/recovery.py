@@ -105,6 +105,9 @@ class Boundary_Method(Enum):
 
     dynamics = 0
     physics = 1
+    dynamics_rho = 2
+    dynamics_theta = 3
+    dynamics_u = 4
 
 
 class Boundary_Recoverer(object):
@@ -157,7 +160,7 @@ class Boundary_Recoverer(object):
             # check whether mesh is valid
             if mesh.topological_dimension() == 2:
                 # if mesh is extruded then we're fine, but if not needs to be quads
-                if not VDG0.extruded and mesh.ufl_cell().cell_name() != 'quadrilateral':
+                if not VDG0.extruded and mesh.ufl_cell().cellname() != 'quadrilateral':
                     raise NotImplementedError('For 2D meshes this recovery method requires that elements are quadrilaterals')
             elif mesh.topological_dimension() == 3:
                 # assume that 3D mesh is extruded
@@ -331,10 +334,10 @@ class Boundary_Recoverer(object):
                                         A[i,2] = EFF_COORDS[i,1]
                                         A[i,3] = EFF_COORDS[i,0]*EFF_COORDS[i,1]
                                         if {nDOFs} > 7
-                                            A[i,4] = EFF_COORDS[i,2]
-                                            A[i,5] = EFF_COORDS[i,0]*EFF_COORDS[i,2]
-                                            A[i,6] = EFF_COORDS[i,1]*EFF_COORDS[i,2]
-                                            A[i,7] = EFF_COORDS[i,0]*EFF_COORDS[i,1]*EFF_COORDS[i,2]
+                                            A[i,4] = EFF_COORDS[i,{dim}-1]
+                                            A[i,5] = EFF_COORDS[i,0]*EFF_COORDS[i,{dim}-1]
+                                            A[i,6] = EFF_COORDS[i,1]*EFF_COORDS[i,{dim}-1]
+                                            A[i,7] = EFF_COORDS[i,0]*EFF_COORDS[i,1]*EFF_COORDS[i,{dim}-1]
                                         end
                                     end
                                 end
@@ -423,7 +426,7 @@ class Boundary_Recoverer(object):
                                     elif {nDOFs} == 4
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]
                                     elif {nDOFs} == 8
-                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1] + a[4]*ACT_COORDS[iiii,2] + a[5]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,2] + a[6]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,2] + a[7]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,2]
+                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1] + a[4]*ACT_COORDS[iiii,{dim}-1] + a[5]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,{dim}-1] + a[6]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1] + a[7]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
                                     end
                                 end
                             """
@@ -507,10 +510,11 @@ class Recoverer(object):
     :arg v_out: :class:`.Function` to put the result in. (e.g. a CG1 function)
     :arg VDG: optional :class:`.FunctionSpace`. If not None, v_in is interpolated
          to this space first before recovery happens.
-    :arg boundary_method: an Enum object, .
+    :arg boundary_method: a Boundary_Method Enum object.
+    :arg periodicity: the direction in which the mesh is periodic. Valid values are 'x', 'y', 'both' and None.
     """
 
-    def __init__(self, v_in, v_out, VDG=None, boundary_method=None):
+    def __init__(self, v_in, v_out, VDG=None, boundary_method=None, periodicity=None):
 
         # check if v_in is valid
         if isinstance(v_in, expression.Expression) or not isinstance(v_in, (ufl.core.expr.Expr, function.Function)):
@@ -532,7 +536,7 @@ class Recoverer(object):
 
         # check boundary method options are valid
         if boundary_method is not None:
-            if boundary_method != Boundary_Method.dynamics and boundary_method != Boundary_Method.physics:
+            if boundary_method not in (Boundary_Method.dynamics_rho, Boundary_Method.dynamics_theta, Boundary_Method.dynamics_u, Boundary_Method.physics):
                 raise ValueError("Boundary method must be a Boundary_Method Enum object.")
             if VDG is None:
                 raise ValueError("If boundary_method is specified, VDG also needs specifying.")
@@ -542,7 +546,7 @@ class Recoverer(object):
                 # check dimensions
                 if self.V.value_size != 1:
                     raise ValueError('This method only works for scalar functions.')
-                self.boundary_recoverer = Boundary_Recoverer(self.v_out, self.v, method=Boundary_Method.physics)
+                self.boundary_recoverer = Boundary_Recoverer(self.v_out, self.v, method=boundary_method)
             else:
 
                 mesh = self.V.mesh()
@@ -551,17 +555,13 @@ class Recoverer(object):
                 VCG1 = FunctionSpace(mesh, "CG", 1)
 
                 if self.V.value_size == 1:
-                    VCG2 = FunctionSpace(mesh, "CG", 2)
-                    coords_to_adjust = find_coords_to_adjust(V0_brok, VDG1, VCG1, VCG2)
+                    coords_to_adjust = find_coords_to_adjust(VDG1, method=boundary_method, periodicity=periodicity)
 
                     self.boundary_recoverer = Boundary_Recoverer(self.v_out, self.v,
                                                                  coords_to_adjust=coords_to_adjust,
                                                                  method=Boundary_Method.dynamics)
                 else:
-                    VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
-                    VuCG2 = VectorFunctionSpace(mesh, "CG", 2)
                     VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
-                    coords_to_adjust = find_coords_to_adjust(V0_brok, VuDG1, VuCG1, VuCG2)
 
                     # now, break the problem down into components
                     v_scalars = []
@@ -573,7 +573,7 @@ class Recoverer(object):
                     for i in range(self.V.value_size):
                         v_scalars.append(Function(VDG1))
                         v_out_scalars.append(Function(VCG1))
-                        coords_to_adjust_list.append(Function(VDG1).project(coords_to_adjust[i]))
+                        coords_to_adjust_list.append(find_coords_to_adjust(VDG1, method=boundary_method, periodicity=periodicity, component=i))
                         self.project_to_scalars_CG.append(Projector(self.v_out[i], v_out_scalars[i]))
                         self.boundary_recoverers.append(Boundary_Recoverer(v_out_scalars[i], v_scalars[i],
                                                                            method=Boundary_Method.dynamics,
@@ -606,7 +606,7 @@ class Recoverer(object):
         return self.v_out
 
 
-def find_coords_to_adjust(V0_brok, DG1, CG1, CG2):
+def find_coords_to_adjust(DG1, method=Boundary_Method.dynamics_rho, periodicity=None, component=None):
     """
     This function finds the coordinates that need to be adjusted
     for the recovery at the boundary. These are assigned by a 1,
@@ -614,179 +614,113 @@ def find_coords_to_adjust(V0_brok, DG1, CG1, CG2):
     This field is returned as a DG1 field.
     Fields can be scalar or vector.
 
-    :arg V0_brok: the broken space of the original field (before recovery).
     :arg DG1: a DG1 space, in which the boundary recovery will happen.
-    :arg CG1: a CG1 space, in which the recovered field lies.
-    :arg CG2: a CG2 space.
+    :arg method: a Boundary_Method Enum object.
+    :arg periodicity: the direction of periodicity. x, y, both or None.
+    :arg component: an integer denoting the component of the vector field for the dynamics_u boundary method.
     """
 
     # check that spaces are correct
     mesh = DG1.mesh()
-    # check V0_brok is fully discontinuous
-    if not is_dg(V0_brok):
-        raise ValueError('Need V0_brok to be a fully discontinuous space.')
-    # check DG1, CG1 and CG2 fields are correct
-    for space, family, degree in zip((DG1, CG1, CG2), ("DG", "CG", "CG"), (1, 1, 2)):
-        if type(space.ufl_element()) == VectorElement:
-            if space != VectorFunctionSpace(mesh, family, degree):
-                raise ValueError('The function space entered as vector %s%s is not vector %s%s.' % (family, degree, family, degree))
-        elif space != FunctionSpace(mesh, family, degree):
-            raise ValueError('The function space entered as %s%s is not %s%s.' % (family, degree, family, degree))
 
-    # STRATEGY
-    # We need to pass the boundary recoverer a field denoting the location
-    # of nodes on the boundary, which denotes the coordinates to adjust to be new effective
-    # coords. This field will be 1 for these coords and 0 otherwise.
-    # How do we do this?
-    # 1. Obtain a DG1 field which is 1 at all exterior DOFs by applying Dirichlet
-    #    boundary conditions.
-    # 2. Obtain a field in DG1 that is 1 at exterior DOFs neighbouring the exterior
-    #    values of V0 (i.e. the original space). For V0=DG0 there will be no exterior
-    #    values, but could be if velocity is in RT or if there is a temperature space.
-    #    This requires a couple of steps:
-    #    a) Obtain a CG2 field with all the correct exterior values. CG2 is chosen because
-    #       all DOFs in V0 should have a DOF at the same position in CG2.
-    #    b) Project this down into V0,  which should give a good approximation to
-    #       having an exterior field in V0, although values will not be 1 necessarily.
-    #       Projection is required because interpolation is not supported for fields
-    #       whose values aren't pointwise evaluations (i.e. velocity spaces).
-    #    c) Interpolate these values into DG1, so this field is correctly represented
-    #       at the same points as the exterior field.
-    #    d) Because of the projection step, values will not necessarily be 1.
-    #       Values that should be 1 *should* be over 1/2 (found by trial and error!),
-    #       and we correct each point individually so that they become 1 or 0.
-    # 3. Obtain a field that is 1 at corners in 2D or along edges in 3D.
-    #    We do this by using that corners in 2D and edges in 3D are intersections
-    #    of edges/faces respectively. In 2D, this means that if a field which is 1 on a
-    #    horizontal edge is summed with a field that is 1 on a vertical edge, the
-    #    corner value will be 2. Subtracting the exterior DG1 field from step 1 leaves
-    #    a field that is 1 in the corner. This is generalised to 3D.
-    # 4. The field of coords to be adjusted is then found by the following formula:
-    #                            f1 + f3 - f2
-    #    where f1, f2 and f3 are the DG1 fields obtained from steps 1, 2 and 3.
+    # check DG1 field is correct
+    if DG1.value_size > 1:
+        raise ValueError('Only scalar fields allowed')
+    elif DG1 != FunctionSpace(mesh, "DG", 1):
+        raise ValueError('The function space entered as DG1 is not DG1.')
 
-    # make DG1 field with 1 at all exterior coords
-    all_ext_in_DG1 = Function(DG1)
-    bcs = [DirichletBC(DG1, Constant(1.0), "on_boundary", method="geometric")]
+    if method not in (Boundary_Method.dynamics_rho, Boundary_Method.dynamics_theta, Boundary_Method.dynamics_u):
+        raise ValueError('Boundary method must be a dynamics Boundary_Method Enum object.')
 
-    if DG1.extruded:
-        bcs.append(DirichletBC(DG1, Constant(1.0), "top", method="geometric"))
-        bcs.append(DirichletBC(DG1, Constant(1.0), "bottom", method="geometric"))
+    if periodicity not in (None, 'x', 'y', 'both'):
+        raise ValueError('periodicity %s not recognised' % periodicity)
 
-    for bc in bcs:
-        bc.apply(all_ext_in_DG1)
+    coords_to_correct = Function(DG1)
 
-    # make DG1 field with 1 at coords surrounding exterior coords of V0
-    # first do it in CG2, as this should contain all DOFs of V0 and DG1
-    all_ext_in_CG2 = Function(CG2)
-    bcs = [DirichletBC(CG2, Constant(1.0), "on_boundary", method="geometric")]
+    bcs_to_apply = []
 
-    if CG2.extruded:
-        bcs.append(DirichletBC(CG2, Constant(1.0), "top", method="geometric"))
-        bcs.append(DirichletBC(CG2, Constant(1.0), "bottom", method="geometric"))
-
-    for bc in bcs:
-        bc.apply(all_ext_in_CG2)
-
-    approx_ext_in_V0 = Function(V0_brok).project(all_ext_in_CG2)
-    approx_V0_ext_in_DG1 = Function(DG1).interpolate(approx_ext_in_V0)
-
-    # now do horrible hack to get back to 1s and 0s
-    for (i, point) in enumerate(approx_V0_ext_in_DG1.dat.data[:]):
-        if type(DG1.ufl_element()) == VectorElement:
-            for (j, p) in enumerate(point):
-                if p > 0.5:
-                    approx_V0_ext_in_DG1.dat.data[i][j] = 1
-                else:
-                    approx_V0_ext_in_DG1.dat.data[i][j] = 0
-        else:
-            if point > 0.5:
-                approx_V0_ext_in_DG1.dat.data[i] = 1
-            else:
-                approx_V0_ext_in_DG1.dat.data[i] = 0
-
-    corners_in_DG1 = Function(DG1)
-    if DG1.mesh().topological_dimension() == 2:
+    if method == Boundary_Method.dynamics_rho:
+        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "on_boundary", method="geometric"))
         if DG1.extruded:
-            DG1_ext_hori = Function(DG1)
-            DG1_ext_vert = Function(DG1)
-            hori_bcs = [DirichletBC(DG1, Constant(1.0), "top", method="geometric"),
-                        DirichletBC(DG1, Constant(1.0), "bottom", method="geometric")]
-            vert_bc = DirichletBC(DG1, Constant(1.0), "on_boundary", method="geometric")
-            for bc in hori_bcs:
-                bc.apply(DG1_ext_hori)
+            bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "top", method="geometric"))
+            bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "bottom", method="geometric"))
 
-            vert_bc.apply(DG1_ext_vert)
-            corners_in_DG1.assign(DG1_ext_hori + DG1_ext_vert - all_ext_in_DG1)
+    elif method == Boundary_Method.dynamics_theta:
+        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "on_boundary", method="geometric"))
 
-        else:
-            # we don't know whether its periodic or in how many directions
-            DG1_ext_x = Function(DG1)
-            DG1_ext_y = Function(DG1)
-            x_bcs = [DirichletBC(DG1, Constant(1.0), 1, method="geometric"),
-                     DirichletBC(DG1, Constant(1.0), 2, method="geometric")]
-            y_bcs = [DirichletBC(DG1, Constant(1.0), 3, method="geometric"),
-                     DirichletBC(DG1, Constant(1.0), 4, method="geometric")]
-
-            # there is no easy way to know if the mesh is periodic or in which
-            # directions, so we must use a try here
-            # LookupError is the error for asking for a boundary number that doesn't exist
-            try:
-                for bc in x_bcs:
-                    bc.apply(DG1_ext_x)
-            except LookupError:
-                pass
-            try:
-                for bc in y_bcs:
-                    bc.apply(DG1_ext_y)
-            except LookupError:
-                pass
-
-            corners_in_DG1.assign(DG1_ext_x + DG1_ext_y - all_ext_in_DG1)
-
-    elif DG1.mesh().topological_dimension() == 3:
-        DG1_vert_x = Function(DG1)
-        DG1_vert_y = Function(DG1)
-        DG1_hori = Function(DG1)
-        x_bcs = [DirichletBC(DG1, Constant(1.0), 1, method="geometric"),
-                 DirichletBC(DG1, Constant(1.0), 2, method="geometric")]
-        y_bcs = [DirichletBC(DG1, Constant(1.0), 3, method="geometric"),
-                 DirichletBC(DG1, Constant(1.0), 4, method="geometric")]
-        hori_bcs = [DirichletBC(DG1, Constant(1.0), "top", method="geometric"),
-                    DirichletBC(DG1, Constant(1.0), "bottom", method="geometric")]
-
-        # there is no easy way to know if the mesh is periodic or in which
-        # directions, so we must use a try here
-        # LookupError is the error for asking for a boundary number that doesn't exist
-        try:
-            for bc in x_bcs:
-                bc.apply(DG1_vert_x)
-        except LookupError:
-            pass
-
-        try:
-            for bc in y_bcs:
-                bc.apply(DG1_vert_y)
-        except LookupError:
-            pass
-
-        for bc in hori_bcs:
-            bc.apply(DG1_hori)
-
-        corners_in_DG1.assign(DG1_vert_x + DG1_vert_y + DG1_hori - all_ext_in_DG1)
-
-    coords_to_correct = Function(DG1).assign(corners_in_DG1 + all_ext_in_DG1 - approx_V0_ext_in_DG1)
-    for (i, point) in enumerate(coords_to_correct.dat.data[:]):
-        if type(DG1.ufl_element()) == VectorElement:
-            for (j, p) in enumerate(point):
-                if p > 0.5:
-                    coords_to_correct.dat.data[i][j] = 1
+    else:
+        if mesh.topological_dimension() == 2:
+            if component == 0:
+                if DG1.extruded:
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "top", method="geometric"))
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "bottom", method="geometric"))
                 else:
-                    coords_to_correct.dat.data[i][j] = 0
-        else:
-            if point > 0.5:
-                coords_to_correct.dat.data[i] = 1
+                    if periodicity == 'x':
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 1, method="geometric"))
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 2, method="geometric"))
+                    elif periodicity is None:
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 3, method="geometric"))
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 4, method="geometric"))
+
+            elif component == 1:
+                if DG1.extruded:
+                    if periodicity is None:
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 1, method="geometric"))
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 2, method="geometric"))
+                else:
+                    if periodicity in ('y', None):
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 1, method="geometric"))
+                        bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 2, method="geometric"))
             else:
-                coords_to_correct.dat.data[i] = 0
+                raise ValueError('We should not have component %i in a 2D space' % component)
+
+        elif mesh.topological_dimension() == 3:
+            # we assume now that the mesh is extruded
+            if component == 0:
+                bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "top", method="geometric"))
+                bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "bottom", method="geometric"))
+                if periodicity == 'x':
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 1, method="geometric"))
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 2, method="geometric"))
+                elif periodicity is None:
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 3, method="geometric"))
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 4, method="geometric"))
+
+
+            elif component == 1:
+                bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "top", method="geometric"))
+                bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "bottom", method="geometric"))
+                if periodicity in ('y', None):
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 1, method="geometric"))
+                    bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), 2, method="geometric"))
+
+            elif component == 2:
+                bcs_to_apply.append(DirichletBC(DG1, Constant(1.0), "on_boundary", method="geometric"))
+
+            else:
+                raise ValueError('We should not have component %i in a 3D space' % component)
+
+
+        elif mesh.topological_dimension() != 1:
+            # we don't need to do anything for velocity if in 1D
+            raise ValueError('Your topological dimension does not make sense.')
+
+
+    for bc in bcs_to_apply:
+        bc.apply(coords_to_correct)
+
+    # V = VectorFunctionSpace(mesh, "DG", 1)
+    # if mesh.topological_dimension() == 2:
+    #     x, z = SpatialCoordinate(mesh)
+    #     coords = Function(V).project(as_vector([x, z]))
+    # elif mesh.topological_dimension() == 3:
+    #     x, y, z = SpatialCoordinate(mesh)
+    #     coords = Function(V).project(as_vector([x, y, z]))
+    # if method == Boundary_Method.dynamics_u:
+    #     for i, j in zip(coords.dat.data[:], coords_to_correct.dat.data[:]):
+    #         if mesh.topological_dimension() == 2:
+    #             print('[%.2f %.2f] %.1f' % (i[0], i[1], j))
+    #         elif mesh.topological_dimension() == 3:
+    #             print('[%.2f %.2f %.2f] %.1f' % (i[0], i[1], i[2], j))
 
     return coords_to_correct

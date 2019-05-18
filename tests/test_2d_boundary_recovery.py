@@ -13,7 +13,7 @@ import numpy as np
 def setup_2d_recovery(dirname):
 
     L = 100.
-    H = 20.
+    H = 100.
 
     deltax = L / 5.
     deltay = H / 5.
@@ -69,9 +69,9 @@ def setup_2d_recovery(dirname):
     rho_Vt = Function(Vt)
 
     # make the recoverers and do the recovery
-    rho_recoverer = Recoverer(rho_DG0, rho_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics)
-    theta_recoverer = Recoverer(theta_Vt, theta_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics)
-    v_recoverer = Recoverer(v_Vu, v_CG1, VDG=VuDG1, boundary_method=Boundary_Method.dynamics)
+    rho_recoverer = Recoverer(rho_DG0, rho_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics_rho, periodicity=None)
+    theta_recoverer = Recoverer(theta_Vt, theta_CG1, VDG=VDG1, boundary_method=Boundary_Method.dynamics_theta, periodicity=None)
+    v_recoverer = Recoverer(v_Vu, v_CG1, VDG=VuDG1, boundary_method=Boundary_Method.dynamics_u, periodicity=None)
     rho_Vt_recoverer = Recoverer(rho_DG0, rho_Vt, VDG=Vt_brok, boundary_method=Boundary_Method.physics)
 
     rho_recoverer.project()
