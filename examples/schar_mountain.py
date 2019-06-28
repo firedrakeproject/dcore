@@ -19,7 +19,7 @@ else:
 
 smooth_z = False
 through_mountain = False
-dirname = 'schar_mountain_more'
+dirname = 'schar_mountain_weighted'
 
 degree = 0 if recovered else 1
 L = 100000.
@@ -67,7 +67,7 @@ fieldlist = ['u', 'rho', 'theta']
 timestepping = TimesteppingParameters(dt=dt)
 
 output = OutputParameters(dirname=dirname,
-                          dumpfreq=tmax/(100*dt),
+                          dumpfreq=tmax/(1*dt),
                           dumplist=['u', 'theta'],
                           perturbation_fields=['theta', 'rho'],
                           log_level='INFO')
