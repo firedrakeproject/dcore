@@ -5,7 +5,7 @@ from firedrake import (expression, function, Function, FunctionSpace, Projector,
                        VectorFunctionSpace, SpatialCoordinate, as_vector,
                        dx, Interpolator, BrokenElement, interval, Constant,
                        TensorProductElement, FiniteElement, DirichletBC,
-                       VectorElement, conditional, max_value)
+                       VectorElement, conditional, max_value, CellVolume)
 from firedrake.utils import cached_property
 from firedrake.parloops import par_loop, READ, INC, WRITE
 from gusto.configuration import logger
@@ -43,6 +43,9 @@ class Averager(object):
         self.v = v
         self.v_out = v_out
         self.V = v_out.function_space()
+        mesh = self.V.mesh()
+        self.area = Function(FunctionSpace(mesh, "DG", 0))
+        self.area.interpolate(CellVolume(mesh))
 
         # Check the number of local dofs
         if self.v_out.function_space().finat_element.space_dimension() != self.v.function_space().finat_element.space_dimension():
@@ -51,16 +54,17 @@ class Averager(object):
         # NOTE: Any bcs on the function self.v should just work.
         # Loop over node extent and dof extent
         self.shapes = {"nDOFs": self.V.finat_element.space_dimension(),
-                       "dim": np.prod(self.V.shape, dtype=int)}
+                       "dim": np.prod(self.V.shape, dtype=int),
+                       "spatial_dim": mesh.topological_dimension()}
         # Averaging kernel
         average_domain = "{{[i, j]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}".format(**self.shapes)
         average_instructions = ("""
                                 for i
                                     for j
-                                        vo[i,j] = vo[i,j] + v[i,j] / w[i,j]
+                                        vo[i,j] = vo[i,j] + v[i,j] * pow(area[0], 1./{spatial_dim}) / w[i,j]
                                     end
                                 end
-                                """)
+                                """).format(**self.shapes)
         self._average_kernel = (average_domain, average_instructions)
 
     @cached_property
@@ -73,13 +77,13 @@ class Averager(object):
         weight_instructions = ("""
                                for i
                                    for j
-                                      w[i,j] = w[i,j] + 1.0
+                                      w[i,j] = w[i,j] + pow(area[0], 1./{spatial_dim})
                                    end
                                end
-                               """)
+                               """).format(**self.shapes)
         _weight_kernel = (weight_domain, weight_instructions)
 
-        par_loop(_weight_kernel, dx, {"w": (w, INC)}, is_loopy_kernel=True)
+        par_loop(_weight_kernel, dx, {"w": (w, INC), "area": (self.area, READ)}, is_loopy_kernel=True)
         return w
 
     def project(self):
@@ -91,7 +95,8 @@ class Averager(object):
         self.v_out.dat.zero()
         par_loop(self._average_kernel, dx, {"vo": (self.v_out, INC),
                                             "w": (self._weighting, READ),
-                                            "v": (self.v, READ)},
+                                            "v": (self.v, READ),
+                                            "area": (self.area, READ)},
                  is_loopy_kernel=True)
         return self.v_out
 
