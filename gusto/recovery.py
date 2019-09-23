@@ -582,7 +582,10 @@ class Recoverer(object):
 
                     # the boundary recoverer needs to be done on a scalar fields
                     # so need to extract component and restore it after the boundary recovery is done
-                    self.project_to_vector = Projector(as_vector(v_out_scalars), self.v_out)
+                    self.project_to_vector = Projector(as_vector(v_out_scalars), self.v_out,
+                                                       solver_parameters={'ksp_type': 'cg',
+                                                                          'pc_type': 'bjacobi',
+                                                                          'sub_pc_type': 'ilu'})
 
     def project(self):
         """
