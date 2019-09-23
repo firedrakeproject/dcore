@@ -53,8 +53,7 @@ def setup_3d_recovery(dirname):
     VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
 
     # set up initial conditions
-    np.random.seed(0)
-    expr = np.random.randn() + np.random.randn()*x + np.random.randn()*y + np.random.randn()*z + np.random.randn()*x*y + np.random.randn()*x*z + np.random.randn()*y*z + np.random.randn()*x*y*z
+    expr = 1 + x + y + z + x*y + x*z + y*z + x*y*z
 
     # our actual theta and rho and v
     rho_CG1_true = Function(VCG1).interpolate(expr)
