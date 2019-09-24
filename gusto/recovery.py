@@ -78,7 +78,6 @@ class Averager(object):
                                end
                                """)
         _weight_kernel = (weight_domain, weight_instructions)
-
         par_loop(_weight_kernel, dx, {"w": (w, INC)}, is_loopy_kernel=True)
         return w
 
