@@ -8,7 +8,7 @@ from firedrake import (as_vector, RectangleMesh, SpatialCoordinate,
                        VectorFunctionSpace, interval, TensorProductElement,
                        FiniteElement, HDiv, norm, BrokenElement)
 import numpy as np
-
+from gusto.configuration import logger
 
 def setup_3d_recovery(dirname):
 
@@ -82,12 +82,11 @@ def setup_3d_recovery(dirname):
     v_recoverer.project()
     rho_Vt_recoverer.project()
 
-    print('NANS', np.isnan(rho_CG1.dat.data[:]).sum(),
-          np.isnan(theta_CG1.dat.data[:]).sum(),
-          np.isnan(v_CG1.dat.data[:]).sum(),
-          np.isnan(rho_Vt.dat.data[:]).sum())
-    print('NORMS', norm(rho_CG1_true), norm(theta_CG1_true),
-          norm(v_CG1_true), norm(rho_Vt_true))
+    logger.warning('NANS', np.isnan(rho_CG1.dat.data[:]).sum(),
+                   np.isnan(theta_CG1.dat.data[:]).sum(),
+                   np.isnan(v_CG1.dat.data[:]).sum(),
+                   np.isnan(rho_Vt.dat.data[:]).sum()))
+    logger.warning('NORMS', norm(rho_CG1_true), norm(theta_CG1_true), norm(v_CG1_true), norm(rho_Vt_true))
 
     rho_diff = errornorm(rho_CG1, rho_CG1_true) / norm(rho_CG1_true)
     theta_diff = errornorm(theta_CG1, theta_CG1_true) / norm(theta_CG1_true)
