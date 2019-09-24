@@ -7,6 +7,7 @@ from firedrake import (as_vector, RectangleMesh, SpatialCoordinate,
                        ExtrudedMesh, FunctionSpace, Function, errornorm,
                        VectorFunctionSpace, interval, TensorProductElement,
                        FiniteElement, HDiv, norm, BrokenElement)
+import numpy as np
 
 
 def setup_3d_recovery(dirname):
@@ -52,7 +53,8 @@ def setup_3d_recovery(dirname):
     VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
 
     # set up initial conditions
-    expr = 1 + x + y + z + x*y + x*z + y*z + x*y*z
+    np.random.seed(0)
+    expr = np.random.randn() + x + y + z + x*y + x*z + y*z + x*y*z
 
     # our actual theta and rho and v
     rho_CG1_true = Function(VCG1).interpolate(expr)
