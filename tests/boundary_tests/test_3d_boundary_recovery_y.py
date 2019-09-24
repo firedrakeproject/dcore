@@ -7,6 +7,7 @@ from firedrake import (as_vector, PeriodicRectangleMesh, SpatialCoordinate,
                        ExtrudedMesh, FunctionSpace, Function, errornorm,
                        VectorFunctionSpace, interval, TensorProductElement,
                        FiniteElement, HDiv, norm, BrokenElement)
+import numpy as np
 from gusto.configuration import logger
 
 
