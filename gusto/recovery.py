@@ -582,10 +582,8 @@ class Recoverer(object):
 
                     # the boundary recoverer needs to be done on a scalar fields
                     # so need to extract component and restore it after the boundary recovery is done
-                    # do an interpolate step into vector field first, as projector is unreliable on Jenkins
-                    vector_v_out = Function(VuDG1)
-                    self.interpolate_to_vector = Interpolator(as_vector(v_out_scalars), vector_v_out)
-                    self.project_to_vector = Projector(vector_v_out, self.v_out)
+                    # do an interpolate, as projector is unreliable on Jenkins
+                    self.interpolate_to_vector = Interpolator(as_vector(v_out_scalars), self.v_out)
 
     def project(self):
         """
@@ -602,7 +600,6 @@ class Recoverer(object):
                     self.boundary_recoverers[i].apply()
                     self.extra_averagers[i].project()
                 self.interpolate_to_vector.interpolate()
-                self.project_to_vector.project()
             else:
                 self.boundary_recoverer.apply()
                 self.averager.project()
