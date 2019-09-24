@@ -100,7 +100,10 @@ def test_3d_boundary_recovery(tmpdir):
 
     dirname = str(tmpdir)
     rho_diff, theta_diff, v_diff, rho_Vt_diff = run_3d_recovery(dirname)
-
+    print('NANS', np.isnan(rho_diff.dat.data[:]).sum(),
+          np.isnan(theta_diff.dat.data[:]).sum(),
+          np.isnan(v_diff.dat.data[:]).sum(),
+          np.isnan(rho_Vt_diff.dat.data[:]).sum())
     tolerance = 1e-7
 #    assert rho_diff < tolerance
     assert theta_diff < tolerance
