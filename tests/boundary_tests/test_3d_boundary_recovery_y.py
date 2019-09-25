@@ -11,7 +11,6 @@ import numpy as np
 from gusto.configuration import logger
 
 
-
 def setup_3d_recovery(dirname):
 
     L = 1.
@@ -90,7 +89,6 @@ def setup_3d_recovery(dirname):
 
     logger.warning('NANS %i %i %i %i' % (np.isnan(rho_CG1.dat.data[:]).sum(), np.isnan(theta_CG1.dat.data[:]).sum(), np.isnan(v_CG1.dat.data[:]).sum(), np.isnan(rho_Vt.dat.data[:]).sum()))
     logger.warning('NORMS %1.5e %1.5e %1.5e %1.5e' % (norm(rho_CG1_true), norm(theta_CG1_true), norm(v_CG1_true), norm(rho_Vt_true)))
-
 
     rho_diff = errornorm(rho_CG1, rho_CG1_true) / norm(rho_CG1_true)
     theta_diff = errornorm(theta_CG1, theta_CG1_true) / norm(theta_CG1_true)
