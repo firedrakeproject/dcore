@@ -83,6 +83,11 @@ def setup_3d_recovery(dirname):
     v_recoverer.project()
     rho_Vt_recoverer.project()
 
+    coords = Function(VuCG1).interpolate(as_vector([x, y, z]))
+    for coord, rho in zip(coords.dat.data[:], rho_CG1.dat.data[:]):
+        if np.isnan(rho):
+            logger.warning('COORDS_OF_NAN [%.1f %.1f %.1f]' % (coord[0], coord[1], coord[2]))
+
     logger.warning('NANS %i %i %i %i' % (np.isnan(rho_CG1.dat.data[:]).sum(), np.isnan(theta_CG1.dat.data[:]).sum(), np.isnan(v_CG1.dat.data[:]).sum(), np.isnan(rho_Vt.dat.data[:]).sum()))
     logger.warning('NORMS %1.5e %1.5e %1.5e %1.5e' % (norm(rho_CG1_true), norm(theta_CG1_true), norm(v_CG1_true), norm(rho_Vt_true)))
 
