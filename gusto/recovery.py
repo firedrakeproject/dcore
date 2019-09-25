@@ -199,6 +199,8 @@ class Boundary_Recoverer(object):
             self.act_coords = Function(VuDG1).project(x)  # actual coordinates
             self.eff_coords = Function(VuDG1).project(x)  # effective coordinates
 
+            self.output = Function(VDG1)
+
             shapes = {"nDOFs": self.v_DG1.function_space().finat_element.space_dimension(),
                       "dim": np.prod(VuDG1.shape, dtype=int)}
 
@@ -411,6 +413,7 @@ class Boundary_Recoverer(object):
                                         a[jjj] = a[jjj] - A[jjj,kkk_loop] * a[kkk_loop]
                                     end
                                     a[jjj] = a[jjj] / A[jjj,jjj]
+                                    OUTPUT[jjj] = a[jjj]
                                     iii = iii + 1
                                 end
                             """
@@ -454,6 +457,7 @@ class Boundary_Recoverer(object):
                       "EXT_V1": (self.coords_to_adjust, READ)},
                      is_loopy_kernel=True)
 
+
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
             bottom_instructions = ("""
@@ -489,7 +493,8 @@ class Boundary_Recoverer(object):
                            "DG1": (self.v_DG1, WRITE),
                            "ACT_COORDS": (self.act_coords, READ),
                            "EFF_COORDS": (self.eff_coords, READ),
-                           "NUM_EXT": (self.num_ext, READ)},
+                           "NUM_EXT": (self.num_ext, READ),
+                           "OUTPUT": (self.output, WRITE)},
                      is_loopy_kernel=True)
 
 
