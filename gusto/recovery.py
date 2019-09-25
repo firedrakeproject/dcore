@@ -501,9 +501,9 @@ class Boundary_Recoverer(object):
                            "OUTPUT": (self.output, WRITE)},
                      is_loopy_kernel=True)
 
-            for act_coord, output in zip(self.act_coords.dat.data[:], self.output.dat.data[:]):
-                if (act_coord[0]) < 0.4 and (act_coord[1] < 0.4) and (act_coord[2] < 0.4):
-                     logger.warning('MY_OUTPUT [%.2f %.2f %.2f] %.3f' % (act_coord[0], act_coord[1], act_coord[2], output))
+            # for act_coord, output in zip(self.act_coords.dat.data[:], self.output.dat.data[:]):
+            #     if (act_coord[0]) < 0.4 and (act_coord[1] < 0.4) and (act_coord[2] < 0.4):
+            #          logger.warning('MY_OUTPUT [%.2f %.2f %.2f] %.3f' % (act_coord[0], act_coord[1], act_coord[2], output))
 
 
 
