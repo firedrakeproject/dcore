@@ -12,10 +12,9 @@ from gusto.configuration import logger
 
 def setup_3d_recovery(dirname):
 
-    L = 100.
-    H = 10.
+    L = 1.
+    H = 1.
     W = 1.
-
     deltax = L / 5.
     deltay = W / 5.
     deltaz = H / 5.
