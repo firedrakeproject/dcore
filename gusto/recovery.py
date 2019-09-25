@@ -387,6 +387,7 @@ class Boundary_Recoverer(object):
                             # find scaling factor
                             """
                                             c = - A[ll,ii] / A[ii,ii]
+                                            OUTPUT[ll] = c
                             """
                             # N.B. mm runs from ii to (nDOFs-1) as elements below diagonal should be 0
                             """
@@ -394,7 +395,6 @@ class Boundary_Recoverer(object):
                                                 A[ll, mm] = A[ll, mm] + c * A[ii,mm]
                                             end
                                             f[ll] = f[ll] + c * f[ii]
-                                            OUTPUT[ll] = c
                                         end
                                         ll = ll + 1
                                     end
@@ -457,13 +457,10 @@ class Boundary_Recoverer(object):
                       "EXT_V1": (self.coords_to_adjust, READ)},
                      is_loopy_kernel=True)
 
-            for act_coord, eff_coord in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
-                if not np.allclose(act_coord, eff_coord):
-                    logger.warning('ACT_VS_EFF_COORDS [%.2f %.2f %.2f] [%.2f %.2f %.2f]' % (act_coord[0], act_coord[1], act_coord[2], eff_coord[0], eff_coord[1], eff_coord[2]))
+            # for act_coord, eff_coord in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
+            #     if not np.allclose(act_coord, eff_coord):
+            #         logger.warning('ACT_VS_EFF_COORDS [%.2f %.2f %.2f] [%.2f %.2f %.2f]' % (act_coord[0], act_coord[1], act_coord[2], eff_coord[0], eff_coord[1], eff_coord[2]))
 
-            for act_coord, output in zip(self.act_coords.dat.data[:], self.output.dat.data[:]):
-                if (act_coord[0]) < 1.4 and (act_coord[1] < 1.4) and (act_coord[2] < 1.4):
-                     logger.warning('MY_OUTPUT [%.2f %.2f %.2f] %.3f' % (act_coord[0], act_coord[1], act_coord[2], output))
 
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
@@ -496,18 +493,23 @@ class Boundary_Recoverer(object):
         else:
             self.v_DG1_old.assign(self.v_DG1)
             par_loop(self._gaussian_elimination_kernel, dx,
-                     {"DG1_OLD": (self.v_DG1_old, READ),
-                      "DG1": (self.v_DG1, WRITE),
-                      "ACT_COORDS": (self.act_coords, READ),
-                      "EFF_COORDS": (self.eff_coords, READ),
-                      "NUM_EXT": (self.num_ext, READ),
-                      "OUTPUT":(self.output, WRITE)},
+                     args={"DG1_OLD": (self.v_DG1_old, READ),
+                           "DG1": (self.v_DG1, WRITE),
+                           "ACT_COORDS": (self.act_coords, READ),
+                           "EFF_COORDS": (self.eff_coords, READ),
+                           "NUM_EXT": (self.num_ext, READ),
+                           "OUTPUT": (self.output, WRITE)},
                      is_loopy_kernel=True)
+
+            for act_coord, output in zip(self.act_coords.dat.data[:], self.output.dat.data[:]):
+                if (act_coord[0]) < 0.4 and (act_coord[1] < 0.4) and (act_coord[2] < 0.4):
+                     logger.warning('MY_OUTPUT [%.2f %.2f %.2f] %.3f' % (act_coord[0], act_coord[1], act_coord[2], output))
+
 
 
 class Recoverer(object):
     """
-    An object that 'recovers' a field from a low order space
+    An object that 'recovers' a field from a low ordeOUTPUTr space
     (e.g. DG0) into a higher order space (e.g. CG1). This encompasses
     the process of interpolating first to a the right space before
     using the :class:`Averager` object, and also automates the
