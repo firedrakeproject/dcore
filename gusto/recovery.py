@@ -199,8 +199,6 @@ class Boundary_Recoverer(object):
             self.act_coords = Function(VuDG1).project(x)  # actual coordinates
             self.eff_coords = Function(VuDG1).project(x)  # effective coordinates
 
-            self.output = Function(VDG1)
-
             shapes = {"nDOFs": self.v_DG1.function_space().finat_element.space_dimension(),
                       "dim": np.prod(VuDG1.shape, dtype=int)}
 
@@ -413,7 +411,6 @@ class Boundary_Recoverer(object):
                                         a[jjj] = a[jjj] - A[jjj,kkk_loop] * a[kkk_loop]
                                     end
                                     a[jjj] = a[jjj] / A[jjj,jjj]
-                                    OUTPUT[jjj] = a[jjj]
                                     iii = iii + 1
                                 end
                             """
@@ -457,11 +454,6 @@ class Boundary_Recoverer(object):
                       "EXT_V1": (self.coords_to_adjust, READ)},
                      is_loopy_kernel=True)
 
-            # for act_coord, eff_coord in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
-            #     if not np.allclose(act_coord, eff_coord):
-            #         logger.warning('ACT_VS_EFF_COORDS [%.2f %.2f %.2f] [%.2f %.2f %.2f]' % (act_coord[0], act_coord[1], act_coord[2], eff_coord[0], eff_coord[1], eff_coord[2]))
-
-
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
             bottom_instructions = ("""
@@ -497,19 +489,13 @@ class Boundary_Recoverer(object):
                            "DG1": (self.v_DG1, WRITE),
                            "ACT_COORDS": (self.act_coords, READ),
                            "EFF_COORDS": (self.eff_coords, READ),
-                           "NUM_EXT": (self.num_ext, READ),
-                           "OUTPUT": (self.output, WRITE)},
+                           "NUM_EXT": (self.num_ext, READ)},
                      is_loopy_kernel=True)
-
-            # for act_coord, output in zip(self.act_coords.dat.data[:], self.output.dat.data[:]):
-            #     if (act_coord[0]) < 0.4 and (act_coord[1] < 0.4) and (act_coord[2] < 0.4):
-            #          logger.warning('MY_OUTPUT [%.2f %.2f %.2f] %.3f' % (act_coord[0], act_coord[1], act_coord[2], output))
-
 
 
 class Recoverer(object):
     """
-    An object that 'recovers' a field from a low ordeOUTPUTr space
+    An object that 'recovers' a field from a low order space
     (e.g. DG0) into a higher order space (e.g. CG1). This encompasses
     the process of interpolating first to a the right space before
     using the :class:`Averager` object, and also automates the
