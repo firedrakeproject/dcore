@@ -199,6 +199,8 @@ class Boundary_Recoverer(object):
             self.act_coords = Function(VuDG1).project(x)  # actual coordinates
             self.eff_coords = Function(VuDG1).project(x)  # effective coordinates
 
+            self.output = Function(VDG1)
+
             shapes = {"nDOFs": self.v_DG1.function_space().finat_element.space_dimension(),
                       "dim": np.prod(VuDG1.shape, dtype=int)}
 
@@ -392,6 +394,7 @@ class Boundary_Recoverer(object):
                                                 A[ll, mm] = A[ll, mm] + c * A[ii,mm]
                                             end
                                             f[ll] = f[ll] + c * f[ii]
+                                            OUTPUT[ll] = c
                                         end
                                         ll = ll + 1
                                     end
@@ -456,7 +459,11 @@ class Boundary_Recoverer(object):
 
             for act_coord, eff_coord in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
                 if not np.allclose(act_coord, eff_coord):
-                    logger.warning('ACT_VS_EFF_COORDS [%.1f %.1f %.1f] [%.1f %.1f %.1f]' % (act_coord[0], act_coord[1], act_coord[2], eff_coord[0], eff_coord[1], eff_coord[2]))
+                    logger.warning('ACT_VS_EFF_COORDS [%.2f %.2f %.2f] [%.2f %.2f %.2f]' % (act_coord[0], act_coord[1], act_coord[2], eff_coord[0], eff_coord[1], eff_coord[2]))
+
+            for act_coord, output in zip(self.act_coords.dat.data[:], self.output.dat.data[:]):
+                if (act_coord[0]) < 1.4 and (act_coord[1] < 1.4) and (act_coord[2] < 1.4):
+                     logger.warning('MY_OUTPUT [%.2f %.2f %.2f] %.3f' % (act_coord[0], act_coord[1], act_coord[2], output))
 
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
@@ -493,7 +500,8 @@ class Boundary_Recoverer(object):
                       "DG1": (self.v_DG1, WRITE),
                       "ACT_COORDS": (self.act_coords, READ),
                       "EFF_COORDS": (self.eff_coords, READ),
-                      "NUM_EXT": (self.num_ext, READ)},
+                      "NUM_EXT": (self.num_ext, READ),
+                      "OUTPUT":(self.output, WRITE)},
                      is_loopy_kernel=True)
 
 
