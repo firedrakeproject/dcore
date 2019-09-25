@@ -387,7 +387,6 @@ class Boundary_Recoverer(object):
                             # find scaling factor
                             """
                                             c = - A[ll,ii] / A[ii,ii]
-                                            OUTPUT[ll] = c
                             """
                             # N.B. mm runs from ii to (nDOFs-1) as elements below diagonal should be 0
                             """
@@ -414,6 +413,7 @@ class Boundary_Recoverer(object):
                                         a[jjj] = a[jjj] - A[jjj,kkk_loop] * a[kkk_loop]
                                     end
                                     a[jjj] = a[jjj] / A[jjj,jjj]
+                                    OUTPUT[jjj] = a[jjj]
                                     iii = iii + 1
                                 end
                             """
