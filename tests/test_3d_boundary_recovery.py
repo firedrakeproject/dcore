@@ -15,9 +15,9 @@ def setup_3d_recovery(dirname):
     L = 1.
     H = 1.
     W = 1.
-    deltax = L / 5.
-    deltay = W / 5.
-    deltaz = H / 5.
+    deltax = L / 3.
+    deltay = W / 3.
+    deltaz = H / 3.
     nlayers = int(H/deltaz)
     ncolumnsx = int(L/deltax)
     ncolumnsy = int(W/deltay)

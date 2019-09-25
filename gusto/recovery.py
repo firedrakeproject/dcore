@@ -454,6 +454,10 @@ class Boundary_Recoverer(object):
                       "EXT_V1": (self.coords_to_adjust, READ)},
                      is_loopy_kernel=True)
 
+            for act_coord, eff_coord in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
+                if not np.allclose(act_coord, eff_coord):
+                    logger.warning('ACT_VS_EFF_COORDS [%.1f %.1f %.1f] [%.1f %.1f %.1f]' % (act_coord[0], act_coord[1], act_coord[2], eff_coord[0], eff_coord[1], eff_coord[2]))
+
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
             bottom_instructions = ("""
