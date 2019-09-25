@@ -457,7 +457,6 @@ class Boundary_Recoverer(object):
                       "EXT_V1": (self.coords_to_adjust, READ)},
                      is_loopy_kernel=True)
 
-
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
             bottom_instructions = ("""
