@@ -491,8 +491,7 @@ class Boundary_Recoverer(object):
                            "DG1": (self.v_DG1, WRITE),
                            "ACT_COORDS": (self.act_coords, READ),
                            "EFF_COORDS": (self.eff_coords, READ),
-                           "NUM_EXT": (self.num_ext, READ),
-                           "OUTPUT": (self.output, WRITE)},
+                           "NUM_EXT": (self.num_ext, READ)},
                      is_loopy_kernel=True)
 
 
