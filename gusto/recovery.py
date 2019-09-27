@@ -364,7 +364,7 @@ class Boundary_Recoverer(object):
                             """
                             # swap the elements of f
                             """
-                                        temp_f = f[ii]  {{id=set_temp_f, dep=*}}
+                                        temp_f = f[ii]  {{id=set_temp_f}}
                                         f[ii] = f[i_max]  {{id=set_f_imax, dep=set_temp_f}}
                                         f[i_max] = temp_f  {{id=set_f_ii, dep=set_f_imax}}
                             """
@@ -372,7 +372,7 @@ class Boundary_Recoverer(object):
                             # N.B. kk runs from ii to (nDOFs-1) as elements below diagonal should be 0
                             """
                                         for kk
-                                            temp_A = A[ii,kk]  {{id=set_temp_A, dep=*}}
+                                            temp_A = A[ii,kk]  {{id=set_temp_A}}
                                             A[ii, kk] = A[i_max, kk]  {{id=set_A_ii, dep=set_temp_A}}
                                             A[i_max, kk] = temp_A  {{id=set_A_imax, dep=set_A_ii}}
                                         end
@@ -407,13 +407,12 @@ class Boundary_Recoverer(object):
                             """
                             # jjj starts at the bottom row and works upwards
                             """
-                                    jjj = {nDOFs} - iii - 1  {{id=assign_jjj, dep=*}}
+                                    jjj = {nDOFs} - iii - 1  {{id=assign_jjj}}
                                     a[jjj] = f[jjj]   {{id=set_a, dep=assign_jjj}}
                                     for kkk_loop
                                         a[jjj] = a[jjj] - A[jjj,kkk_loop] * a[kkk_loop]
                                     end
                                     a[jjj] = a[jjj] / A[jjj,jjj]
-                                    OUTPUT[jjj] = a[jjj]
                                     iii = iii + 1
                                 end
                             """
