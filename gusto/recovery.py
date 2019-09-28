@@ -328,15 +328,23 @@ class Boundary_Recoverer(object):
                                     f[i] = DG1_OLD[i]
                                     A[i,0] = 1.0
                                     A[i,1] = EFF_COORDS[i,0]
-                                    if {nDOFs} > 3
+                                    if {nDOFs} == 3
+                                        A[i,2] = EFF_COORDS[i,1]
+                                    elif {nDOFs} == 4
                                         A[i,2] = EFF_COORDS[i,1]
                                         A[i,3] = EFF_COORDS[i,0]*EFF_COORDS[i,1]
-                                        if {nDOFs} > 7
-                                            A[i,4] = EFF_COORDS[i,{dim}-1]
-                                            A[i,5] = EFF_COORDS[i,0]*EFF_COORDS[i,{dim}-1]
-                                            A[i,6] = EFF_COORDS[i,1]*EFF_COORDS[i,{dim}-1]
-                                            A[i,7] = EFF_COORDS[i,0]*EFF_COORDS[i,1]*EFF_COORDS[i,{dim}-1]
-                                        end
+                                    elif {nDOFs} == 6
+                                        A[i,2] = EFF_COORDS[i,1]
+                                        A[i,3] = EFF_COORDS[i,2]
+                                        A[i,4] = EFF_COORDS[i,0]*EFF_COORDS[i,2]
+                                        A[i,5] = EFF_COORDS[i,1]*EFF_COORDS[i,2]
+                                    elif {nDOFs} == 8
+                                        A[i,2] = EFF_COORDS[i,1]
+                                        A[i,3] = EFF_COORDS[i,0]*EFF_COORDS[i,1]
+                                        A[i,4] = EFF_COORDS[i,2]
+                                        A[i,5] = EFF_COORDS[i,0]*EFF_COORDS[i,2]
+                                        A[i,6] = EFF_COORDS[i,1]*EFF_COORDS[i,2]
+                                        A[i,7] = EFF_COORDS[i,0]*EFF_COORDS[i,1]*EFF_COORDS[i,2]
                                     end
                                 end
                             """
@@ -421,8 +429,12 @@ class Boundary_Recoverer(object):
                                 for iiii
                                     if {nDOFs} == 2
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0]
+                                    elif {nDOFs} == 3
+                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1]
                                     elif {nDOFs} == 4
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]
+                                    elif {nDOFs} == 6
+                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,2] + a[4]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,{dim}-1] + a[5]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
                                     elif {nDOFs} == 8
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1] + a[4]*ACT_COORDS[iiii,{dim}-1] + a[5]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,{dim}-1] + a[6]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1] + a[7]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
                                     end
