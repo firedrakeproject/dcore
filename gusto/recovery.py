@@ -291,12 +291,12 @@ class Boundary_Recoverer(object):
                             end
                             """).format(**shapes)
 
-            elimin_domain = ("{{[i, ii_loop, jj_loop, kk, ll_loop, mm, iii_loop, kkk_loop, iiii, iiiii]: "
+            elimin_domain = ("{{[i, ii_loop, jj_loop, kk, ll_loop, mm, iii_loop, kkk_loop, iiii]: "
                              "0 <= i < {nDOFs} and 0 <= ii_loop < {nDOFs} and "
                              "ii_loop + 1 <= jj_loop < {nDOFs} and ii_loop <= kk < {nDOFs} and "
                              "ii_loop + 1 <= ll_loop < {nDOFs} and ii_loop <= mm < {nDOFs} + 1 and "
                              "0 <= iii_loop < {nDOFs} and {nDOFs} - iii_loop <= kkk_loop < {nDOFs} + 1 and "
-                             "0 <= iiii < {nDOFs} and 0 <= iiiii < {nDOFs}}}").format(**shapes)
+                             "0 <= iiii < {nDOFs}}}").format(**shapes)
             elimin_insts = ("""
                             <int> ii = 0
                             <int> jj = 0
@@ -423,10 +423,15 @@ class Boundary_Recoverer(object):
                                     a[jjj] = a[jjj] / A[jjj,jjj]
                                     iii = iii + 1
                                 end
+                            end
+                            """
+                            # Do final loop to assign output values
+                            """
+                            for iiii
                             """
                             # Having found a, this gives us the coefficients for the Taylor expansion with the actual coordinates.
                             """
-                                for iiii
+                                if NUM_EXT[0] > 0.0
                                     if {nDOFs} == 2
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0]
                                     elif {nDOFs} == 3
@@ -438,13 +443,11 @@ class Boundary_Recoverer(object):
                                     elif {nDOFs} == 8
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1] + a[4]*ACT_COORDS[iiii,{dim}-1] + a[5]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,{dim}-1] + a[6]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1] + a[7]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
                                     end
-                                end
                             """
                             # if element is not external, just use old field values.
                             """
-                            else
-                                for iiiii
-                                    DG1[iiiii] = DG1_OLD[iiiii]
+                                else
+                                    DG1[iiii] = DG1_OLD[iiii]
                                 end
                             end
                             """).format(**shapes)
