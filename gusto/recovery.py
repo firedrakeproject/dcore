@@ -293,9 +293,9 @@ class Boundary_Recoverer(object):
 
             elimin_domain = ("{{[i, ii_loop, jj_loop, kk, ll_loop, mm, iii_loop, kkk_loop, iiii]: "
                              "0 <= i < {nDOFs} and 0 <= ii_loop < {nDOFs} and "
-                             "ii_loop + 1 <= jj_loop < {nDOFs} and ii_loop <= kk < {nDOFs} and "
-                             "ii_loop + 1 <= ll_loop < {nDOFs} and ii_loop <= mm < {nDOFs} + 1 and "
-                             "0 <= iii_loop < {nDOFs} and {nDOFs} - iii_loop <= kkk_loop < {nDOFs} + 1 and "
+                             "0 <= jj_loop < {nDOFs} and 0 <= kk < {nDOFs} and "
+                             "0 <= ll_loop < {nDOFs} and 0 <= mm < {nDOFs} and "
+                             "0 <= iii_loop < {nDOFs} and 0 <= kkk_loop < {nDOFs} and "
                              "0 <= iiii < {nDOFs}}}").format(**shapes)
             elimin_insts = ("""
                             <int> ii = 0
@@ -354,15 +354,17 @@ class Boundary_Recoverer(object):
                                     A_max = fabs(A[ii,ii])
                                     i_max = ii
                             """
-                            # loop to find the largest value in the ith column
+                            # loop to find the largest value in the ii-th column
                             # set i_max as the index of the row with this largest value.
                             """
                                     jj = ii + 1
                                     for jj_loop
-                                        if fabs(A[jj,ii]) > A_max
-                                            i_max = jj
+                                        if jj < {nDOFs}
+                                            if fabs(A[jj,ii]) > A_max
+                                                i_max = jj
+                                            end
+                                            A_max = fmax(A_max, fabs(A[jj,ii]))
                                         end
-                                        A_max = fmax(A_max, fabs(A[jj,ii]))
                                         jj = jj + 1
                                     end
                             """
@@ -380,9 +382,11 @@ class Boundary_Recoverer(object):
                             # N.B. kk runs from ii to (nDOFs-1) as elements below diagonal should be 0
                             """
                                         for kk
-                                            temp_A = A[ii,kk]  {{id=set_temp_A}}
-                                            A[ii, kk] = A[i_max, kk]  {{id=set_A_ii, dep=set_temp_A}}
-                                            A[i_max, kk] = temp_A  {{id=set_A_imax, dep=set_A_ii}}
+                                            if kk > ii - 1
+                                                temp_A = A[ii,kk]  {{id=set_temp_A}}
+                                                A[ii, kk] = A[i_max, kk]  {{id=set_A_ii, dep=set_temp_A}}
+                                                A[i_max, kk] = temp_A  {{id=set_A_imax, dep=set_A_ii}}
+                                            end
                                         end
                                     end
                             """
@@ -391,17 +395,19 @@ class Boundary_Recoverer(object):
                                     ll = ii + 1
                                     for ll_loop
                                         if ll > ii
+                                            if ll < {nDOFs}
                             """
                             # find scaling factor
                             """
-                                            c = - A[ll,ii] / A[ii,ii]
+                                                c = - A[ll,ii] / A[ii,ii]
                             """
                             # N.B. mm runs from ii to (nDOFs-1) as elements below diagonal should be 0
                             """
-                                            for mm
-                                                A[ll, mm] = A[ll, mm] + c * A[ii,mm]
+                                                for mm
+                                                    A[ll, mm] = A[ll, mm] + c * A[ii,mm]
+                                                end
+                                                f[ll] = f[ll] + c * f[ii]
                                             end
-                                            f[ll] = f[ll] + c * f[ii]
                                         end
                                         ll = ll + 1
                                     end
@@ -418,7 +424,9 @@ class Boundary_Recoverer(object):
                                     jjj = {nDOFs} - iii - 1  {{id=assign_jjj}}
                                     a[jjj] = f[jjj]   {{id=set_a, dep=assign_jjj}}
                                     for kkk_loop
-                                        a[jjj] = a[jjj] - A[jjj,kkk_loop] * a[kkk_loop]
+                                        if kkk_loop > {nDOFs} - iii_loop - 1
+                                            a[jjj] = a[jjj] - A[jjj,kkk_loop] * a[kkk_loop]
+                                        end
                                     end
                                     a[jjj] = a[jjj] / A[jjj,jjj]
                                     iii = iii + 1
@@ -439,9 +447,9 @@ class Boundary_Recoverer(object):
                                     elif {nDOFs} == 4
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]
                                     elif {nDOFs} == 6
-                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,2] + a[4]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,{dim}-1] + a[5]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
+                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,2] + a[4]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,2] + a[5]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
                                     elif {nDOFs} == 8
-                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1] + a[4]*ACT_COORDS[iiii,{dim}-1] + a[5]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,{dim}-1] + a[6]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1] + a[7]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
+                                        DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0] + a[2]*ACT_COORDS[iiii,1] + a[3]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1] + a[4]*ACT_COORDS[iiii,2] + a[5]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,{dim}-1] + a[6]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1] + a[7]*ACT_COORDS[iiii,0]*ACT_COORDS[iiii,1]*ACT_COORDS[iiii,{dim}-1]
                                     end
                             """
                             # if element is not external, just use old field values.
