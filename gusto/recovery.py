@@ -368,7 +368,7 @@ class Boundary_Recoverer(object):
                                         jj = jj + 1
                                     end
                             """
-                            # if the max value in the ith column isn't in the ith row, we must swap the rows
+                            # if the max value in the ith column isn't in the ii-th row, we must swap the rows
                             """
                                     if i_max != ii
                             """
@@ -400,9 +400,6 @@ class Boundary_Recoverer(object):
                             # find scaling factor
                             """
                                                 c = - A[ll,ii] / A[ii,ii]
-                            """
-                            # N.B. mm runs from ii to (nDOFs-1) as elements below diagonal should be 0
-                            """
                                                 for mm
                                                     A[ll, mm] = A[ll, mm] + c * A[ii,mm]
                                                 end
