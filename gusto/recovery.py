@@ -7,7 +7,7 @@ from firedrake import (expression, function, Function, FunctionSpace, Projector,
                        TensorProductElement, FiniteElement, DirichletBC,
                        VectorElement, conditional, max_value)
 from firedrake.utils import cached_property
-from firedrake.parloops import par_loop, READ, INC, WRITE
+from firedrake.parloops import par_loop, READ, INC, WRITE, RW
 from gusto.configuration import logger
 from pyop2 import ON_TOP, ON_BOTTOM
 import ufl
@@ -120,17 +120,19 @@ class Boundary_Recoverer(object):
     to perform this is by using the analytic solution and a parloop.
 
     Currently this is only implemented for the (DG0, DG1, CG1)
-    set of spaces, and only on a `PeriodicIntervalMesh` or
-    'PeriodicUnitIntervalMesh` that has been extruded.
+    set of spaces.
 
     :arg v_CG1: the continuous function after the first recovery
              is performed. Should be in CG1. This is correct
              on the interior of the domain.
     :arg v_DG1: the function to be output. Should be in DG1.
     :arg method: a Boundary_Method Enum object.
+    :arg eff_coords: a vector DG1 field giving the effective coordinates
+                     for the boundary recovery. Necessary for the Dynamics
+                     Boundary_Method.
     """
 
-    def __init__(self, v_CG1, v_DG1, method=Boundary_Method.physics, V0=None):
+    def __init__(self, v_CG1, v_DG1, method=Boundary_Method.physics, eff_coords=None):
 
         self.v_DG1 = v_DG1
         self.v_CG1 = v_CG1
@@ -142,26 +144,25 @@ class Boundary_Recoverer(object):
         VCG1 = FunctionSpace(mesh, "CG", 1)
         VDG1 = FunctionSpace(mesh, "DG", 1)
 
+        VuDG1 = VectorFunctionSpace(VDG0.mesh(), "DG", 1)
+        VuCG1 = VectorFunctionSpace(VDG0.mesh(), "CG", 1)
+        x = SpatialCoordinate(VDG0.mesh())
+        self.interpolator = Interpolator(self.v_CG1, self.v_DG1)
+
         self.num_ext = Function(VDG0)
 
         # check function spaces of functions
         if self.method == Boundary_Method.dynamics:
             if v_CG1.function_space() != VCG1:
-                raise NotImplementedError("This boundary recovery method requires v1 to be in CG1.")
+                raise NotImplementedError("This boundary recovery method requires v1 to be in CG1")
             if v_DG1.function_space() != VDG1:
-                raise NotImplementedError("This boundary recovery method requires v_out to be in DG1.")
-            if V0 == None:
-                raise ValueError('For dynamics boundary recovery, need to specify a V0')
+                raise NotImplementedError("This boundary recovery method requires v_out to be in DG1")
+            if eff_coords == None:
+                raise ValueError('For dynamics boundary recovery, need to specify effective coordinates')
+            elif eff_coords.function_space() != VuDG1:
+                raise NotImplementedError("Need effective coordinates to be in vector DG1 function space")
             # check whether mesh is valid
-            if mesh.topological_dimension() == 2:
-                # if mesh is extruded then we're fine, but if not needs to be quads
-                if not VDG0.extruded and mesh.ufl_cell().cellname() != 'quadrilateral':
-                    raise NotImplementedError('For 2D meshes this recovery method requires that elements are quadrilaterals')
-            elif mesh.topological_dimension() == 3:
-                # assume that 3D mesh is extruded
-                if mesh._base_mesh.ufl_cell().cellname() != 'quadrilateral':
-                    raise NotImplementedError('For 3D extruded meshes this recovery method requires a base mesh with quadrilateral elements')
-            elif mesh.topological_dimension() != 1:
+            if mesh.topological_dimension() != mesh.geometric_dimension():
                 raise NotImplementedError('This boundary recovery is implemented only on certain classes of mesh.')
 
         elif self.method == Boundary_Method.physics:
@@ -184,11 +185,6 @@ class Boundary_Recoverer(object):
         else:
             raise ValueError("Boundary method should be a Boundary Method Enum object.")
 
-        Vu0 = VectorFunctionSpace(VDG0.mesh(), V0.ufl_element())
-        VuDG1 = VectorFunctionSpace(VDG0.mesh(), "DG", 1)
-        VuCG1 = VectorFunctionSpace(VDG0.mesh(), "CG", 1)
-        x = SpatialCoordinate(VDG0.mesh())
-        self.interpolator = Interpolator(self.v_CG1, self.v_DG1)
 
         if self.method == Boundary_Method.dynamics:
 
@@ -196,12 +192,8 @@ class Boundary_Recoverer(object):
             # obtain a coordinate field for all the nodes
             VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
             self.act_coords = Function(VuDG1).project(x)  # actual coordinates
-            eff_coords_CG1 = Function(VuCG1)
-            self.eff_coords = Function(VuDG1)  # effective coordinates
+            self.eff_coords = eff_coords  # effective coordinates in DG1
             self.output = Function(VDG1)
-
-            find_eff_coords = Averager(self.act_coords, eff_coords_CG1).project()
-            self.eff_coords.interpolate(eff_coords_CG1)
 
             shapes = {"nDOFs": self.v_DG1.function_space().finat_element.space_dimension(),
                       "dim": np.prod(VuDG1.shape, dtype=int)}
@@ -213,14 +205,19 @@ class Boundary_Recoverer(object):
             <float64> dist = 0.0
             <float64> min_dist = (ACT_COORDS[0,0] - ACT_COORDS[1,0]) ** 2
             <float64> act_eff_dist = 0.0
+            <float64> dist_i[{dim}] = 0.0
+            <float64> max_dist_i[{dim}] = 0.0
             """
             # first find minimum distance between DOFs within the cell
+            # also find max distance in each dimension within that cell
             """
             for i
                 for j
-                    dist = 0
+                    dist = 0.0
                     for k
                         dist = dist + (ACT_COORDS[i,k] - ACT_COORDS[j,k]) ** 2
+                        dist_i[k] = (ACT_COORDS[i,k] - ACT_COORDS[j,k]) ** 2
+                        max_dist_i[k] = fmax(dist_i[k], max_dist_i[k])
                     end
                     min_dist = fmin(dist, min_dist)
                 end
@@ -233,13 +230,21 @@ class Boundary_Recoverer(object):
                 act_eff_dist = 0.0
                 for kk
                     act_eff_dist = act_eff_dist + (ACT_COORDS[ii,kk] - EFF_COORDS[ii,kk]) ** 2
+                    dist_i[kk] = (ACT_COORDS[ii,kk] - EFF_COORDS[ii,kk]) ** 2
                 end
                 if act_eff_dist > min_dist / 100
-                    SUM_EXT = SUM_EXT + 1
+            """
+            # correct those that are due to a jump because of a periodic domain
+            """
+                    if dist_i[kk] > max_dist_i[kk]
+                        EFF_COORDS[ii,kk] = ACT_COORDS[ii,kk]
+                    else
+                        SUM_EXT = SUM_EXT + 1
+                    end
                 end
             end
             NUM_EXT[0] = SUM_EXT
-            """)
+            """).format(**shapes)
 
 
             elimin_domain = ("{{[i, ii_loop, jj_loop, kk, ll_loop, mm, iii_loop, kkk_loop, iiii]: "
@@ -419,8 +424,12 @@ class Boundary_Recoverer(object):
             par_loop(_num_ext_kernel, dx,
                      {"NUM_EXT": (self.num_ext, WRITE),
                       "ACT_COORDS": (self.act_coords, READ),
-                      "EFF_COORDS": (self.eff_coords, READ)},
+                      "EFF_COORDS": (self.eff_coords, RW)},
                      is_loopy_kernel=True)
+
+            #for act, eff in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
+                #print('act [%.2f %.2f %.2f], eff [%.2f %.2f %.2f]' % (act[0], act[1], act[2], eff[0], eff[1], eff[2]))
+
 
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
@@ -518,11 +527,13 @@ class Recoverer(object):
                 V0 = FunctionSpace(mesh, self.v_in.function_space().ufl_element())
                 VDG1 = FunctionSpace(mesh, "DG", 1)
                 VCG1 = FunctionSpace(mesh, "CG", 1)
+                eff_coords = find_eff_coords(V0)
 
                 if self.V.value_size == 1:
 
                     self.boundary_recoverer = Boundary_Recoverer(self.v_out, self.v,
-                                                                 method=Boundary_Method.dynamics)
+                                                                 method=Boundary_Method.dynamics,
+                                                                 eff_coords=eff_coords)
                 else:
                     VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
 
@@ -537,7 +548,8 @@ class Recoverer(object):
                         v_out_scalars.append(Function(VCG1))
                         self.project_to_scalars_CG.append(Projector(self.v_out[i], v_out_scalars[i]))
                         self.boundary_recoverers.append(Boundary_Recoverer(v_out_scalars[i], v_scalars[i],
-                                                                           method=Boundary_Method.dynamics))
+                                                                           method=Boundary_Method.dynamics,
+                                                                           eff_coords=eff_coords[i]))
                         # need an extra averager that works on the scalar fields rather than the vector one
                         self.extra_averagers.append(Averager(v_scalars[i], v_out_scalars[i]))
 
@@ -564,3 +576,95 @@ class Recoverer(object):
                 self.boundary_recoverer.apply()
                 self.averager.project()
         return self.v_out
+
+
+def find_eff_coords(V0):
+    """
+    Takes a function in a field V0 and returns the effective coordindates,
+    in a vector DG1 spacem of recovery into a CG1 field. This is for use with the
+    Boundary_Recoverer, as it facilitates the Gaussian elimination used to get
+    second-order recovery at boundaries.
+
+    If V0 is a vector function space, this returns an array of coordinates for
+    each component.
+
+    :arg V0: the original function space.
+    """
+
+
+    mesh = V0.mesh()
+    VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
+    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
+    x = SpatialCoordinate(mesh)
+
+    if V0.ufl_element().value_size() > 1:
+        eff_coords_list = []
+        V0_coords_list = []
+
+        # treat this separately for each component
+        for i in range(V0.ufl_element().value_size()):
+            # fill an d-dimensional list with i-th coordinate
+            x_list = [x[i] for j in range(V0.ufl_element().value_size())]
+
+            # the i-th element in V0_coords_list is a vector with all components the i-th coord
+            ith_V0_coords = Function(V0).project(as_vector(x_list))
+            V0_coords_list.append(ith_V0_coords)
+
+        for i in range(V0.ufl_element().value_size()):
+            # slice through V0_coords_list to obtain the coords of the DOFs for that component
+            x_list = [V0_coords[i] for V0_coords in V0_coords_list]
+
+            # average these to find effective coords in CG1
+            V0_coords_in_DG1 = Function(VuDG1).interpolate(as_vector(x_list))
+            eff_coords_in_CG1 = Function(VuCG1)
+            eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1).project()
+
+            # obtain these in DG1
+            eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
+            eff_coords_list.append(eff_coords_in_DG1)
+
+        return eff_coords_list
+
+    else:
+        # find the coordinates at DOFs in V0
+        VuV0 = VectorFunctionSpace(mesh, V0.ufl_element())
+        V0_coords = Function(VuV0).project(x)
+
+        # average these to find effective coords in CG1
+        V0_coords_in_DG1 = Function(VuDG1).interpolate(V0_coords)
+        eff_coords_in_CG1 = Function(VuCG1)
+        eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1).project()
+
+        # obtain these in DG1
+        eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
+
+        return eff_coords_in_DG1
+
+
+def correct_eff_coords(eff_coords):
+    """
+    Correct the effective coordinates calculated by simply averaging
+    which will not be correct at periodic boundaries.
+
+    :arg eff_coords: the effective coordinates in VuDG1 space.
+    """
+
+    mesh = eff_coords.function_space().mesh()
+    VuDG1 = FunctionSpace(mesh, "DG", 1)
+    VuCG1 = FunctionSpace(mesh, "CG", 1)
+    x = SpatialCoordinate(mesh)
+
+    if eff_coords.function_space() != VuDG1:
+        raise ValueError('eff_coords needs to be in the vector DG1 space')
+
+    # obtain different coords in DG1
+    DG1_coords = Function(VuDG1).interpolate(x)
+    CG1_coords = Function(VuCG1)
+    averager = Averager(DG1_coords, CG1_coords).project()
+    CG1_coords_in_DG1 = Function(VuDG1).interpolate(CG1_coords)
+
+    # interpolate coordinates, adjusting those different coordinates
+    tolerance = 1e-15
+    adjusted_CG1_coords = Function(VuCG1)
+    adjusted_CG1_coords.interpolate(conditional(eff_coords > DG1_coords + tolerance,
+                                                eff_coords))
