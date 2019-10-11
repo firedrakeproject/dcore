@@ -233,14 +233,7 @@ class Boundary_Recoverer(object):
                     dist_i[kk] = (ACT_COORDS[ii,kk] - EFF_COORDS[ii,kk]) ** 2
                 end
                 if act_eff_dist > min_dist / 100
-            """
-            # correct those that are due to a jump because of a periodic domain
-            """
-                    if dist_i[kk] > max_dist_i[kk]
-                        EFF_COORDS[ii,kk] = ACT_COORDS[ii,kk]
-                    else
-                        SUM_EXT = SUM_EXT + 1
-                    end
+                    SUM_EXT = SUM_EXT + 1
                 end
             end
             NUM_EXT[0] = SUM_EXT
@@ -424,7 +417,7 @@ class Boundary_Recoverer(object):
             par_loop(_num_ext_kernel, dx,
                      {"NUM_EXT": (self.num_ext, WRITE),
                       "ACT_COORDS": (self.act_coords, READ),
-                      "EFF_COORDS": (self.eff_coords, RW)},
+                      "EFF_COORDS": (self.eff_coords, READ)},
                      is_loopy_kernel=True)
 
             #for act, eff in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
@@ -621,7 +614,7 @@ def find_eff_coords(V0):
 
             # obtain these in DG1
             eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
-            eff_coords_list.append(eff_coords_in_DG1)
+            eff_coords_list.append(correct_eff_coords(eff_coords_in_DG1))
 
         return eff_coords_list
 
@@ -638,7 +631,7 @@ def find_eff_coords(V0):
         # obtain these in DG1
         eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
 
-        return eff_coords_in_DG1
+        return correct_eff_coords(eff_coords_in_DG1)
 
 
 def correct_eff_coords(eff_coords):
@@ -650,8 +643,8 @@ def correct_eff_coords(eff_coords):
     """
 
     mesh = eff_coords.function_space().mesh()
-    VuDG1 = FunctionSpace(mesh, "DG", 1)
-    VuCG1 = FunctionSpace(mesh, "CG", 1)
+    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
+    VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
     x = SpatialCoordinate(mesh)
 
     if eff_coords.function_space() != VuDG1:
@@ -659,12 +652,13 @@ def correct_eff_coords(eff_coords):
 
     # obtain different coords in DG1
     DG1_coords = Function(VuDG1).interpolate(x)
-    CG1_coords = Function(VuCG1)
-    averager = Averager(DG1_coords, CG1_coords).project()
-    CG1_coords_in_DG1 = Function(VuDG1).interpolate(CG1_coords)
+    CG1_coords_from_DG1 = Function(VuCG1)
+    averager = Averager(DG1_coords, CG1_coords_from_DG1).project()
+    DG1_coords_from_averaged_CG1 = Function(VuDG1).interpolate(CG1_coords_from_DG1)
+    DG1_coords_diff = Function(VuDG1).interpolate(DG1_coords - DG1_coords_from_averaged_CG1)
 
     # interpolate coordinates, adjusting those different coordinates
-    tolerance = 1e-15
-    adjusted_CG1_coords = Function(VuCG1)
-    adjusted_CG1_coords.interpolate(conditional(eff_coords > DG1_coords + tolerance,
-                                                eff_coords))
+    adjusted_coords = Function(VuDG1)
+    adjusted_coords.interpolate(eff_coords + DG1_coords_diff)
+
+    return adjusted_coords
