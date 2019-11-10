@@ -2,10 +2,10 @@
 The recovery operators used for lowest-order advection schemes.
 """
 from firedrake import (expression, function, Function, FunctionSpace, Projector,
-                       VectorFunctionSpace, SpatialCoordinate, as_vector,
-                       dx, Interpolator, BrokenElement, interval, Constant,
-                       TensorProductElement, FiniteElement, DirichletBC,
-                       VectorElement, conditional, max_value)
+                       VectorFunctionSpace, SpatialCoordinate, as_vector, as_tensor,
+                       dx, Interpolator, BrokenElement, interval, Constant, inner,
+                       TensorProductElement, FiniteElement, DirichletBC, sqrt,
+                       VectorElement, conditional, max_value, TensorFunctionSpace)
 from firedrake.utils import cached_property
 from firedrake.parloops import par_loop, READ, INC, WRITE, RW
 from gusto.configuration import logger
@@ -52,6 +52,7 @@ class Averager(object):
         # Loop over node extent and dof extent
         self.shapes = {"nDOFs": self.V.finat_element.space_dimension(),
                        "dim": np.prod(self.V.shape, dtype=int)}
+
         # Averaging kernel
         average_domain = "{{[i, j]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}".format(**self.shapes)
         average_instructions = ("""
@@ -61,6 +62,7 @@ class Averager(object):
                                     end
                                 end
                                 """)
+        self.par_loop_instructions = {"vo": (self.v_out, INC), "w": (self._weighting, READ), "v": (self.v, READ)}
         self._average_kernel = (average_domain, average_instructions)
 
     @cached_property
@@ -73,13 +75,14 @@ class Averager(object):
         weight_instructions = ("""
                                for i
                                    for j
-                                      w[i,j] = w[i,j] + 1.0
+                                        w[i,j] = w[i,j] + 1.0
                                    end
                                end
                                """)
-        _weight_kernel = (weight_domain, weight_instructions)
+        par_loop_instructions = {"w": (w, INC)}
 
-        par_loop(_weight_kernel, dx, {"w": (w, INC)}, is_loopy_kernel=True)
+        _weight_kernel = (weight_domain, weight_instructions)
+        par_loop(_weight_kernel, dx, par_loop_instructions, is_loopy_kernel=True)
         return w
 
     def project(self):
@@ -89,9 +92,7 @@ class Averager(object):
 
         # Ensure that the function being populated is zeroed out
         self.v_out.dat.zero()
-        par_loop(self._average_kernel, dx, {"vo": (self.v_out, INC),
-                                            "w": (self._weighting, READ),
-                                            "v": (self.v, READ)},
+        par_loop(self._average_kernel, dx, self.par_loop_instructions,
                  is_loopy_kernel=True)
         return self.v_out
 
@@ -480,7 +481,7 @@ class Recoverer(object):
     :arg boundary_method: an Enum object, .
     """
 
-    def __init__(self, v_in, v_out, VDG=None, boundary_method=None):
+    def __init__(self, v_in, v_out, VDG=None, boundary_method=None, vector_transformation=False):
 
         # check if v_in is valid
         if isinstance(v_in, expression.Expression) or not isinstance(v_in, (ufl.core.expr.Expr, function.Function)):
@@ -489,12 +490,58 @@ class Recoverer(object):
         self.v_in = v_in
         self.v_out = v_out
         self.V = v_out.function_space()
+        mesh = self.V.mesh()
+        self.vector_transformation = vector_transformation
+
         if VDG is not None:
             self.v = Function(VDG)
             self.interpolator = Interpolator(v_in, self.v)
         else:
             self.v = v_in
             self.interpolator = None
+
+        if self.V.extruded:
+            spherical = (mesh._base_mesh.topological_dimension() == 2 and mesh._base_mesh.geometric_dimension() == 3)
+        else:
+            spherical = (mesh.topological_dimension() == 2 and mesh.geometric_dimension() == 3)
+
+        if (spherical and self.V.value_size == 3):
+            V0 = self.v_in.function_space()
+            logger.warning('Assuming that your domain is spherical')
+            x = SpatialCoordinate(mesh)
+
+            if vector_transformation:
+                if VDG is None:
+                    raise ValueError('To use vector transformation need to provide VDG to Recoverer')
+
+                # spherical distances
+                r = sqrt(x[0] ** 2 + x[1] ** 2)
+                R = sqrt(x[0] ** 2 + x[1] ** 2 + x[2] ** 2)
+                zonal_vectors = Function(V0).project(as_vector([-x[1]/r, x[0]/r, 0.0]))
+                meridional_vectors = Function(V0).project(as_vector([-x[0]*x[2]/(r*R), -x[1]*x[2]/(r*R), r/R]))
+                radial_vectors = Function(V0).project(as_vector([x[0]/R, x[1]/R, x[2]/R]))
+                zonal_vectors.dat.data[:] = np.nan_to_num(zonal_vectors.dat.data[:])
+                meridional_vectors.dat.data[:] = np.nan_to_num(meridional_vectors.dat.data[:])
+                radial_vectors.dat.data[:] = np.nan_to_num(radial_vectors.dat.data[:])
+                self.transform_to_spherical = Interpolator(as_vector([inner(zonal_vectors, v_in),
+                                                                      inner(meridional_vectors, v_in),
+                                                                      inner(radial_vectors, v_in)]), self.v)
+                self.interpolator = self.transform_to_spherical  # we can exploit the interpolator here
+                x_vectors = Function(VDG).interpolate(as_vector([-x[1]/r, -x[0]*x[2]/(r*R), x[0]/R]))
+                y_vectors = Function(VDG).interpolate(as_vector([x[0]/r, -x[1]*x[2]/(r*R), x[1]/R]))
+                z_vectors = Function(VDG).interpolate(as_vector([0.0, r/R, x[2]/R]))
+                x_vectors.dat.data[:] = np.nan_to_num(x_vectors.dat.data[:])
+                y_vectors.dat.data[:] = np.nan_to_num(y_vectors.dat.data[:])
+                z_vectors.dat.data[:] = np.nan_to_num(z_vectors.dat.data[:])
+                self.transform_to_cartesian = Interpolator(as_vector([inner(x_vectors, self.v_out),
+                                                                      inner(y_vectors, self.v_out),
+                                                                      inner(z_vectors, self.v_out)]), self.v_out)
+            else:
+                self.transformation = None
+                logger.warning('You are recovering a vector on a sphere but are not using a transformation.'
+                               'This may result in a loss of accuracy')
+        else:
+            self.transformation = None
 
         self.VDG = VDG
         self.boundary_method = boundary_method
@@ -515,7 +562,6 @@ class Recoverer(object):
                 self.boundary_recoverer = Boundary_Recoverer(self.v_out, self.v, method=Boundary_Method.physics)
             else:
 
-                mesh = self.V.mesh()
                 # this ensures we get the pure function space, not an indexed function space
                 V0 = FunctionSpace(mesh, self.v_in.function_space().ufl_element())
                 VDG1 = FunctionSpace(mesh, "DG", 1)
@@ -555,9 +601,12 @@ class Recoverer(object):
         Perform the fully specified recovery.
         """
 
+
         if self.interpolator is not None:
             self.interpolator.interpolate()
         self.averager.project()
+        if self.vector_transformation:
+            self.transform_to_cartesian.interpolate()
         if self.boundary_method is not None:
             if self.V.value_size > 1:
                 for i in range(self.V.value_size):
