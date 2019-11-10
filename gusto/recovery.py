@@ -574,7 +574,7 @@ class Recoverer(object):
 def find_eff_coords(V0):
     """
     Takes a function in a field V0 and returns the effective coordindates,
-    in a vector DG1 spacem of recovery into a CG1 field. This is for use with the
+    in a vector DG1 space, of a recovery into a CG1 field. This is for use with the
     Boundary_Recoverer, as it facilitates the Gaussian elimination used to get
     second-order recovery at boundaries.
 
@@ -584,10 +584,9 @@ def find_eff_coords(V0):
     :arg V0: the original function space.
     """
 
-
     mesh = V0.mesh()
-    VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
-    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
+    Vec_CG1 = VectorFunctionSpace(mesh, "CG", 1)
+    Vec_DG1 = VectorFunctionSpace(mesh, "DG", 1)
     x = SpatialCoordinate(mesh)
 
     if V0.ufl_element().value_size() > 1:
@@ -608,28 +607,28 @@ def find_eff_coords(V0):
             x_list = [V0_coords[i] for V0_coords in V0_coords_list]
 
             # average these to find effective coords in CG1
-            V0_coords_in_DG1 = Function(VuDG1).interpolate(as_vector(x_list))
-            eff_coords_in_CG1 = Function(VuCG1)
+            V0_coords_in_DG1 = Function(Vec_DG1).interpolate(as_vector(x_list))
+            eff_coords_in_CG1 = Function(Vec_CG1)
             eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1).project()
 
             # obtain these in DG1
-            eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
+            eff_coords_in_DG1 = Function(Vec_DG1).interpolate(eff_coords_in_CG1)
             eff_coords_list.append(correct_eff_coords(eff_coords_in_DG1))
 
         return eff_coords_list
 
     else:
         # find the coordinates at DOFs in V0
-        VuV0 = VectorFunctionSpace(mesh, V0.ufl_element())
-        V0_coords = Function(VuV0).project(x)
+        Vec_V0 = VectorFunctionSpace(mesh, V0.ufl_element())
+        V0_coords = Function(Vec_V0).project(x)
 
         # average these to find effective coords in CG1
-        V0_coords_in_DG1 = Function(VuDG1).interpolate(V0_coords)
-        eff_coords_in_CG1 = Function(VuCG1)
+        V0_coords_in_DG1 = Function(Vec_DG1).interpolate(V0_coords)
+        eff_coords_in_CG1 = Function(Vec_CG1)
         eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1).project()
 
         # obtain these in DG1
-        eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
+        eff_coords_in_DG1 = Function(Vec_DG1).interpolate(eff_coords_in_CG1)
 
         return correct_eff_coords(eff_coords_in_DG1)
 
