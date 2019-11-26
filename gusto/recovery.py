@@ -163,8 +163,8 @@ class Boundary_Recoverer(object):
             elif eff_coords.function_space() != VuDG1:
                 raise NotImplementedError("Need effective coordinates to be in vector DG1 function space")
             # check whether mesh is valid
-            if mesh.topological_dimension() != mesh.geometric_dimension():
-                raise NotImplementedError('This boundary recovery is implemented only on certain classes of mesh.')
+            # if mesh.topological_dimension() != mesh.geometric_dimension():
+            #     raise NotImplementedError('This boundary recovery is implemented only on certain classes of mesh.')
 
         elif self.method == Boundary_Method.physics:
             # check that mesh is valid -- must be an extruded mesh
@@ -421,8 +421,8 @@ class Boundary_Recoverer(object):
                       "EFF_COORDS": (self.eff_coords, READ)},
                      is_loopy_kernel=True)
 
-            #for act, eff in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
-                #print('act [%.2f %.2f %.2f], eff [%.2f %.2f %.2f]' % (act[0], act[1], act[2], eff[0], eff[1], eff[2]))
+            for act, eff in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
+                print('act [%.2f %.2f %.2f], eff [%.2f %.2f %.2f]' % (act[0], act[1], act[2], eff[0], eff[1], eff[2]))
 
 
         elif self.method == Boundary_Method.physics:
@@ -478,10 +478,12 @@ class Recoverer(object):
     :arg v_out: :class:`.Function` to put the result in. (e.g. a CG1 function)
     :arg VDG: optional :class:`.FunctionSpace`. If not None, v_in is interpolated
          to this space first before recovery happens.
-    :arg boundary_method: an Enum object, .
+    :arg boundary_method: an Enum object, giving the boundary method to use.
+    :arg spherical_transformation: used to get more accurate recovery of vectors
+         on spherical surfaces.
     """
 
-    def __init__(self, v_in, v_out, VDG=None, boundary_method=None, vector_transformation=False):
+    def __init__(self, v_in, v_out, VDG=None, boundary_method=None, spherical_transformation=False):
 
         # check if v_in is valid
         if isinstance(v_in, expression.Expression) or not isinstance(v_in, (ufl.core.expr.Expr, function.Function)):
@@ -491,7 +493,7 @@ class Recoverer(object):
         self.v_out = v_out
         self.V = v_out.function_space()
         mesh = self.V.mesh()
-        self.vector_transformation = vector_transformation
+        self.spherical_transformation = spherical_transformation
 
         if VDG is not None:
             self.v = Function(VDG)
@@ -510,7 +512,7 @@ class Recoverer(object):
             logger.warning('Assuming that your domain is spherical')
             x = SpatialCoordinate(mesh)
 
-            if vector_transformation:
+            if spherical_transformation:
                 if VDG is None:
                     raise ValueError('To use vector transformation need to provide VDG to Recoverer')
 
@@ -566,7 +568,7 @@ class Recoverer(object):
                 V0 = FunctionSpace(mesh, self.v_in.function_space().ufl_element())
                 VDG1 = FunctionSpace(mesh, "DG", 1)
                 VCG1 = FunctionSpace(mesh, "CG", 1)
-                eff_coords = find_eff_coords(V0)
+                eff_coords = find_eff_coords(V0, spherical)
 
                 if self.V.value_size == 1:
 
@@ -605,7 +607,7 @@ class Recoverer(object):
         if self.interpolator is not None:
             self.interpolator.interpolate()
         self.averager.project()
-        if self.vector_transformation:
+        if self.spherical_transformation:
             self.transform_to_cartesian.interpolate()
         if self.boundary_method is not None:
             if self.V.value_size > 1:
@@ -620,7 +622,7 @@ class Recoverer(object):
         return self.v_out
 
 
-def find_eff_coords(V0):
+def find_eff_coords(V0, spherical_transformation=False):
     """
     Takes a function in a field V0 and returns the effective coordindates,
     in a vector DG1 spacem of recovery into a CG1 field. This is for use with the
@@ -631,6 +633,7 @@ def find_eff_coords(V0):
     each component.
 
     :arg V0: the original function space.
+    :arg spherical_transformation: whether to do recovery with spherical transformation option.
     """
 
 
@@ -659,7 +662,8 @@ def find_eff_coords(V0):
             # average these to find effective coords in CG1
             V0_coords_in_DG1 = Function(VuDG1).interpolate(as_vector(x_list))
             eff_coords_in_CG1 = Function(VuCG1)
-            eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1).project()
+            eff_coords_averager = Recoverer(V0_coords_in_DG1, eff_coords_in_CG1, VDG=VuDG1, spherical_transformation=spherical_transformation)
+            eff_coords_averager.project()
 
             # obtain these in DG1
             eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)

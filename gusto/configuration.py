@@ -158,6 +158,7 @@ class RecoveredOptions(AdvectionOptions):
     recovered_space = None
     broken_space = None
     boundary_method = None
+    spherical_transformation = False
 
 
 class SUPGOptions(AdvectionOptions):

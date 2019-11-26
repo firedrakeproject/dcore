@@ -104,7 +104,9 @@ class Advection(object, metaclass=ABCMeta):
             x_brok = Function(options.broken_space)
 
             # set up interpolators and projectors
-            self.x_rec_projector = Recoverer(self.x_in, x_rec, VDG=self.fs, boundary_method=options.boundary_method)  # recovered function
+            self.x_rec_projector = Recoverer(self.x_in, x_rec, VDG=self.fs,
+                                             boundary_method=options.boundary_method,
+                                             spherical_transformation=options.spherical_transformation)
             self.x_brok_projector = Projector(x_rec, x_brok)  # function projected back
             self.xdg_interpolator = Interpolator(self.x_in + x_rec - x_brok, self.xdg_in)
             if self.limiter is not None:
