@@ -89,8 +89,13 @@ class Advection(object, metaclass=ABCMeta):
             parameters = {'ksp_type': 'cg',
                           'pc_type': 'bjacobi',
                           'sub_pc_type': 'ilu'}
-            self.Projector = Projector(self.xdg_out, self.x_projected,
-                                       solver_parameters=parameters)
+
+        if options.name == "embedded_dg":
+            if self.limiter is None:
+                self.x_out_projector = Projector(self.xdg_out, self.x_projected,
+                                                 solver_parameters=parameters)
+            else:
+                self.x_out_projector = Recoverer(self.xdg_out, self.x_projected)
 
         if options.name == "recovered":
             # set up the necessary functions
@@ -105,6 +110,8 @@ class Advection(object, metaclass=ABCMeta):
             if self.limiter is not None:
                 self.x_brok_interpolator = Interpolator(self.xdg_out, x_brok)
                 self.x_out_projector = Recoverer(x_brok, self.x_projected)
+            else:
+                self.x_out_projector = Projector(self.xdg_out, self.x_projected)
 
     def pre_apply(self, x_in, discretisation_option):
         """
@@ -137,15 +144,9 @@ class Advection(object, metaclass=ABCMeta):
         :arg x_out: the outgoing field.
         :arg discretisation_option: string specifying which option to use.
         """
-        if discretisation_option == "embedded_dg":
-            self.Projector.project()
-
-        elif discretisation_option == "recovered":
-            if self.limiter is not None:
-                self.x_brok_interpolator.interpolate()
-                self.x_out_projector.project()
-            else:
-                self.Projector.project()
+        if discretisation_option == "recovered" and self.limiter is not None:
+            self.x_brok_interpolator.interpolate()
+        self.x_out_projector.project()
         x_out.assign(self.x_projected)
 
     @abstractproperty

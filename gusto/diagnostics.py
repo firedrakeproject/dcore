@@ -1,5 +1,5 @@
 from firedrake import op2, assemble, dot, dx, FunctionSpace, Function, sqrt, \
-    TestFunction, TrialFunction, CellNormal, Constant, cross, grad, inner, \
+    TestFunction, TrialFunction, Constant, grad, inner, \
     LinearVariationalProblem, LinearVariationalSolver, FacetNormal, \
     ds, ds_b, ds_v, ds_t, dS_v, div, avg, jump, DirichletBC, BrokenElement, \
     TensorFunctionSpace, SpatialCoordinate, VectorFunctionSpace, as_vector
@@ -710,13 +710,7 @@ class Vorticity(DiagnosticField):
             else:
                 a = q*gamma*dx
 
-            if state.on_sphere:
-                cell_normals = CellNormal(state.mesh)
-                gradperp = lambda psi: cross(cell_normals, grad(psi))
-                L = (- inner(gradperp(gamma), u))*dx
-            else:
-                raise NotImplementedError("The vorticity diagnostics have only been implemented for 2D spherical geometries.")
-
+            L = (- inner(state.perp(grad(gamma)), u))*dx
             if vorticity_type != "relative":
                 f = state.fields("coriolis")
                 L += gamma*f*dx

@@ -558,8 +558,9 @@ class ShallowWaterSolver(TimesteppingSolver):
         self.uD = Function(W)
 
         # Solver for u, D
+        bcs = None if len(self.state.bcs) == 0 else self.state.bcs
         uD_problem = LinearVariationalProblem(
-            aeqn, Leqn, self.state.dy)
+            aeqn, Leqn, self.state.dy, bcs=bcs)
 
         self.uD_solver = LinearVariationalSolver(uD_problem,
                                                  solver_parameters=self.solver_parameters,

@@ -1,4 +1,3 @@
-from __future__ import absolute_import, print_function, division
 from firedrake import dx, BrokenElement, Function, FunctionSpace
 from firedrake.parloops import par_loop, READ, WRITE, INC
 from firedrake.slope_limiter.vertex_based_limiter import VertexBasedLimiter
@@ -17,7 +16,6 @@ class ThetaLimiter(object):
     def __init__(self, space):
         """
         Initialise limiter
-
         :param space: the space in which theta lies.
         It should be the DG1xCG2 space.
         """
@@ -81,7 +79,6 @@ class ThetaLimiter(object):
         copy_from_DG1_instrs = ("""
                                 <float64> max_value = 0.0
                                 <float64> min_value = 0.0
-
                                 for i
                                     for j
                                         theta[i*3+j] = theta_hat[i*2+j]
@@ -121,7 +118,6 @@ class ThetaLimiter(object):
         the original temperature space, and checks that the
         midpoint values are within the minimum and maximum
         at the adjacent vertices.
-
         If outside of the minimum and maximum, correct the values
         to be the average.
         """
@@ -130,18 +126,6 @@ class ThetaLimiter(object):
                   "theta_hat": (self.theta_hat, READ),
                   "theta_old": (self.theta_old, READ)},
                  is_loopy_kernel=True)
-
-    def remap_to_embedded_space(self, field):
-        """
-        Remap from DG space to embedded DG space.
-        """
-
-        self.result.assign(0.)
-        par_loop(self._average_kernel, dx, {"vo": (self.result, INC),
-                                            "v": (field, READ),
-                                            "w": (self.w, READ)},
-                 is_loopy_kernel=True)
-        field.assign(self.result)
 
     def apply(self, field):
         """
@@ -154,7 +138,6 @@ class ThetaLimiter(object):
         self.copy_vertex_values(field)
         self.vertex_limiter.apply(self.theta_hat)
         self.copy_vertex_values_back(field)
-        self.remap_to_embedded_space(field)
 
 
 class NoLimiter(object):

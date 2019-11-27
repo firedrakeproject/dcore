@@ -2,6 +2,7 @@ from gusto import *
 from firedrake import (PeriodicIntervalMesh, ExtrudedMesh,
                        SpatialCoordinate, exp, sin, Function, as_vector)
 import numpy as np
+import itertools
 
 
 def setup_sk(dirname):
@@ -15,9 +16,16 @@ def setup_sk(dirname):
     H = 1.0e4  # Height position of the model top
     mesh = ExtrudedMesh(m, layers=nlayers, layer_height=H/nlayers)
 
+    # Set up points for output at the centre of the domain, edges and corners.
+    # The point at x=L*(13.0/30) is in the halo region for a two-way MPI decomposition
+    points_x = [0.0, L*(13.0/30), L/2.0, L]
+    points_z = [0.0, H/2.0, H]
+    points = np.array([p for p in itertools.product(points_x, points_z)])
+
     fieldlist = ['u', 'rho', 'theta']
     timestepping = TimesteppingParameters(dt=dt)
-    output = OutputParameters(dirname=dirname+"/sk_nonlinear", dumplist=['u'], dumpfreq=5, log_level=INFO)
+    output = OutputParameters(dirname=dirname+"/sk_nonlinear", dumplist=['u'], dumpfreq=5, log_level=INFO,
+                              point_data=[('rho', points), ('u', points)])
     parameters = CompressibleParameters()
     diagnostic_fields = [CourantNumber()]
 

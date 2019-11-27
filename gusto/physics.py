@@ -68,7 +68,7 @@ class Condensation(Physics):
 
         # make rho variables
         # we recover rho into theta space
-        if state.vertical_degree == 0 and state.mesh.geometric_dimension() == 2:
+        if state.vertical_degree == 0 and state.horizontal_degree == 0:
             boundary_method = Boundary_Method.physics
         else:
             boundary_method = None
@@ -217,9 +217,11 @@ class Fallout(Physics):
             VDG1 = FunctionSpace(Vt.mesh(), "DG", 1)
             VCG1 = FunctionSpace(Vt.mesh(), "CG", 1)
             Vbrok = FunctionSpace(Vt.mesh(), BrokenElement(Vt.ufl_element()))
+            boundary_method = Boundary_Method.dynamics
             advect_options = RecoveredOptions(embedding_space=VDG1,
                                               recovered_space=VCG1,
-                                              broken_space=Vbrok)
+                                              broken_space=Vbrok,
+                                              boundary_method=boundary_method)
         else:
             advect_options = EmbeddedDGOptions()
 
@@ -345,7 +347,7 @@ class Evaporation(Physics):
 
         # make rho variables
         # we recover rho into theta space
-        if state.vertical_degree == 0 and state.mesh.geometric_dimension == 2:
+        if state.vertical_degree == 0 and state.horizontal_degree == 0:
             boundary_method = Boundary_Method.physics
         else:
             boundary_method = None
