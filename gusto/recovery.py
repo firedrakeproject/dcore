@@ -188,7 +188,7 @@ class Boundary_Recoverer(object):
             self.act_coords = Function(VuDG1).project(x)  # actual coordinates
             self.eff_coords = eff_coords  # effective coordinates in DG1
             self.output = Function(VDG1)
-            self.on_exterior = find_domain_boundaries(VDG0, eff_coords=eff_coords)
+            self.on_exterior = find_domain_boundaries(mesh)
 
             shapes = {"nDOFs": self.v_DG1.function_space().finat_element.space_dimension(),
                       "dim": np.prod(VuDG1.shape, dtype=int)}
@@ -605,20 +605,23 @@ def correct_eff_coords(eff_coords):
     return adjusted_coords
 
 
-def find_domain_boundaries(DG0, eff_coords=None):# remember to remove this
+def find_domain_boundaries(mesh):# remember to remove this
     """
     Makes a scalar DG0 function whose values are 0. everywhere except for in
     cells on the boundary of the domain, where the values are 1.0.
 
     This allows boundary cells to be identified easily.
 
-    :arg DG0: a DG0 field.
+    :arg CG1: a CG1 field.
     """
 
-    on_exterior = Function(DG0)
+    DG0 = FunctionSpace(mesh, "DG", 0)
+    CG1 = FunctionSpace(mesh, "CG", 1)
+
+    on_exterior = Function(CG1)
 
     bc_codes = ['on_boundary', 'top', 'bottom']
-    bcs = [DirichletBC(DG0, Constant(1.0), bc_code, method='geometric') for bc_code in bc_codes]
+    bcs = [DirichletBC(CG1, Constant(1.0), bc_code, method='geometric') for bc_code in bc_codes]
 
     for bc in bcs:
         try:
@@ -626,72 +629,24 @@ def find_domain_boundaries(DG0, eff_coords=None):# remember to remove this
         except ValueError:
             pass
 
-    mesh = DG0.mesh()
-    x = SpatialCoordinate(mesh)
-    vec_DG0 = VectorFunctionSpace(mesh, "DG", 0)
-    coords = Function(vec_DG0).project(x)
+    sum_exterior = Function(DG0).interpolate(Constant(0.0))
 
-    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
-    act_coords = Function(VuDG1).project(x)  # actual coordinates
-    DG1 = FunctionSpace(mesh, "DG", 1)
-    v_DG1 = Function(DG1)
+    shapes = {"nDOFs": CG1.finat_element.space_dimension()}
 
-    shapes = {"nDOFs": v_DG1.function_space().finat_element.space_dimension(),
-              "dim": np.prod(VuDG1.shape, dtype=int)}
-
-    num_ext_domain = ("{{[i, j, k, ii, kk]: 0 <= i < {nDOFs} and 0 <= j < {nDOFs} and "
-                      "0 <= k < {dim} and 0 <= ii < {nDOFs} and 0 <= kk < {dim}}}").format(**shapes)
+    num_ext_domain = ("{{[i]: 0 <= i < {nDOFs}}}").format(**shapes)
     num_ext_instructions = ("""
-                            <float64> SUM_EXT = 0
-                            <float64> dist = 0.0
-                            <float64> min_dist = (ACT_COORDS[0,0] - ACT_COORDS[1,0]) ** 2
-                            <float64> act_eff_dist = 0.0
-                            <float64> dist_i[{dim}] = 0.0
-                            <float64> max_dist_i[{dim}] = 0.0
-                            """
-                            # first find minimum distance between DOFs within the cell
-                            # also find max distance in each dimension within that cell
-                            """
                             for i
-                                for j
-                                    dist = 0.0
-                                    for k
-                                        dist = dist + (ACT_COORDS[i,k] - ACT_COORDS[j,k]) ** 2
-                                        dist_i[k] = (ACT_COORDS[i,k] - ACT_COORDS[j,k]) ** 2
-                                        max_dist_i[k] = fmax(dist_i[k], max_dist_i[k])
-                                    end
-                                    min_dist = fmin(dist, min_dist)
-                                end
+                                SUM_EXT[0] = SUM_EXT[0] + ON_EXT[i]
                             end
-                            """
-                            # measure distance between actual and effective coordinates
-                            # if greater than some tolerance (min_dist / 100), then coordinates have been adjusted
-                            """
-                            for ii
-                                act_eff_dist = 0.0
-                                for kk
-                                    act_eff_dist = act_eff_dist + (ACT_COORDS[ii,kk] - EFF_COORDS[ii,kk]) ** 2
-                                    dist_i[kk] = (ACT_COORDS[ii,kk] - EFF_COORDS[ii,kk]) ** 2
-                                end
-                                if act_eff_dist > min_dist / 100
-                                    SUM_EXT = SUM_EXT + 1
-                                end
-                            end
-                            NUM_EXT[0] = SUM_EXT
-                            """).format(**shapes)
-
+                            """)
+    
     _num_ext_kernel = (num_ext_domain, num_ext_instructions)
-
+    
     # find number of external DOFs per cell
     par_loop(_num_ext_kernel, dx,
-             {"NUM_EXT": (on_exterior, WRITE),
-              "ACT_COORDS": (act_coords, READ),
-              "EFF_COORDS": (eff_coords, READ)},
+             {"SUM_EXT": (sum_exterior, WRITE),
+              "ON_EXT": (on_exterior, READ)},
                 is_loopy_kernel=True)
 
 
-    for f, coord in zip(on_exterior.dat.data[:], coords.dat.data[:]):
-        print('%.1f %.2f %.2f' % (f, coord[0], coord[1]))
-
-
-    return on_exterior
+    return sum_exterior
