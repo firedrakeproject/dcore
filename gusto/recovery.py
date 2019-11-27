@@ -3,13 +3,8 @@ The recovery operators used for lowest-order advection schemes.
 """
 from firedrake import (expression, function, Function, FunctionSpace, Projector,
                        VectorFunctionSpace, SpatialCoordinate, as_vector,
-                       dx, Interpolator, BrokenElement, interval, Constant,
-<<<<<<< HEAD
-                       TensorProductElement, FiniteElement, DirichletBC,
-                       VectorElement, conditional, max_value, CellVolume)
-=======
-                       TensorProductElement, FiniteElement, DirichletBC)
->>>>>>> new_effective_coords
+                       dx, Interpolator, BrokenElement, interval, Constant, sqrt,
+                       TensorProductElement, FiniteElement, DirichletBC, inner)
 from firedrake.utils import cached_property
 from firedrake.parloops import par_loop, READ, INC, WRITE
 from pyop2 import ON_TOP, ON_BOTTOM
@@ -33,7 +28,7 @@ class Averager(object):
     :arg v_out: :class:`.Function` to put the result in.
     """
 
-    def __init__(self, v, v_out):
+    def __init__(self, v, v_out, weights=None):
 
         if isinstance(v, expression.Expression) or not isinstance(v, (ufl.core.expr.Expr, function.Function)):
             raise ValueError("Can only recover UFL expression or Functions not '%s'" % type(v))
@@ -45,10 +40,9 @@ class Averager(object):
         self._same_fspace = (isinstance(v, function.Function) and v.function_space() == v_out.function_space())
         self.v = v
         self.v_out = v_out
+        self.weights = weights
         self.V = v_out.function_space()
         mesh = self.V.mesh()
-        self.area = Function(FunctionSpace(mesh, "DG", 0))
-        self.area.interpolate(CellVolume(mesh))
 
         # Check the number of local dofs
         if self.v_out.function_space().finat_element.space_dimension() != self.v.function_space().finat_element.space_dimension():
@@ -61,13 +55,27 @@ class Averager(object):
                        "spatial_dim": mesh.topological_dimension()}
         # Averaging kernel
         average_domain = "{{[i, j]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}".format(**self.shapes)
-        average_instructions = ("""
-                                for i
-                                    for j
-                                        vo[i,j] = vo[i,j] + v[i,j] * pow(area[0], 1./{spatial_dim}) / w[i,j]
+
+        if self.weights is not None:
+            average_instructions = ("""
+                                    for i
+                                        for j
+                                            vo[i,j] = vo[i,j] + v[i,j] * 1. / (DIST[i,j] *  w[i,j])
+                                        end
                                     end
-                                end
-                                """).format(**self.shapes)
+                                    """).format(**self.shapes)
+            self.loop_args = {"vo": (self.v_out, INC), "w": (self._weighting, READ),
+                              "v": (self.v, READ), "DIST": (self.weights, READ)}
+        else:
+            average_instructions = ("""
+                                    for i
+                                        for j
+                                            vo[i,j] = vo[i,j] + v[i,j] / w[i,j]
+                                        end
+                                    end
+                                    """).format(**self.shapes)
+            self.loop_args = {"vo": (self.v_out, INC), "w": (self._weighting, READ), "v": (self.v, READ)}
+
         self._average_kernel = (average_domain, average_instructions)
 
     @cached_property
@@ -77,16 +85,29 @@ class Averager(object):
         """
         w = Function(self.V)
         weight_domain = "{{[i, j]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}".format(**self.shapes)
-        weight_instructions = ("""
-                               for i
-                                   for j
-                                      w[i,j] = w[i,j] + pow(area[0], 1./{spatial_dim})
+        if self.weights is not None:
+            weight_instructions = ("""
+                                   for i
+                                       for j
+                                          w[i,j] = w[i,j] + 1.0 / DIST[i,j]
+                                       end
                                    end
-                               end
-                               """).format(**self.shapes)
+                                   """)
+            weight_args = {"w": (w, INC), "DIST": (self.weights, READ)}
+        else:
+            weight_instructions = ("""
+                                   for i
+                                       for j
+                                          w[i,j] = w[i,j] + 1.0
+                                       end
+                                   end
+                                   """)
+            weight_args = {"w": (w, INC)}
+
         _weight_kernel = (weight_domain, weight_instructions)
 
-        par_loop(_weight_kernel, dx, {"w": (w, INC), "area": (self.area, READ)}, is_loopy_kernel=True)
+        par_loop(_weight_kernel, dx, weight_args, is_loopy_kernel=True)
+
         return w
 
     def project(self):
@@ -96,11 +117,8 @@ class Averager(object):
 
         # Ensure that the function being populated is zeroed out
         self.v_out.dat.zero()
-        par_loop(self._average_kernel, dx, {"vo": (self.v_out, INC),
-                                            "w": (self._weighting, READ),
-                                            "v": (self.v, READ),
-                                            "area": (self.area, READ)},
-                 is_loopy_kernel=True)
+        par_loop(self._average_kernel, dx, self.loop_args, is_loopy_kernel=True)
+
         return self.v_out
 
 
@@ -431,7 +449,7 @@ class Recoverer(object):
     :arg boundary_method: an Enum object, .
     """
 
-    def __init__(self, v_in, v_out, VDG=None, boundary_method=None):
+    def __init__(self, v_in, v_out, VDG=None, boundary_method=None, weighting=False):
 
         # check if v_in is valid
         if isinstance(v_in, expression.Expression) or not isinstance(v_in, (ufl.core.expr.Expr, function.Function)):
@@ -449,7 +467,16 @@ class Recoverer(object):
 
         self.VDG = VDG
         self.boundary_method = boundary_method
-        self.averager = Averager(self.v, self.v_out)
+
+        mesh = self.V.mesh()
+        V0 = FunctionSpace(mesh, self.v_in.function_space().ufl_element())
+        if weighting:
+            if self.VDG is None:
+                raise ValueError('Need VDG defined to use weighted recovery')
+            weights = find_weights(self.VDG, V0)
+        else:
+            weights = None
+        self.averager = Averager(self.v, self.v_out, weights=weights)
 
         # check boundary method options are valid
         if boundary_method is not None:
@@ -466,9 +493,7 @@ class Recoverer(object):
                 self.boundary_recoverer = Boundary_Recoverer(self.v_out, self.v, method=Boundary_Method.physics)
             else:
 
-                mesh = self.V.mesh()
                 # this ensures we get the pure function space, not an indexed function space
-                V0 = FunctionSpace(mesh, self.v_in.function_space().ufl_element())
                 VDG1 = FunctionSpace(mesh, "DG", 1)
                 VCG1 = FunctionSpace(mesh, "CG", 1)
                 eff_coords = find_eff_coords(V0)
@@ -649,9 +674,9 @@ def find_domain_boundaries(mesh):# remember to remove this
                                 SUM_EXT[0] = SUM_EXT[0] + ON_EXT[i]
                             end
                             """)
-    
+
     _num_ext_kernel = (num_ext_domain, num_ext_instructions)
-    
+
     # find number of external DOFs per cell
     par_loop(_num_ext_kernel, dx,
              {"SUM_EXT": (sum_exterior, WRITE),
@@ -660,3 +685,23 @@ def find_domain_boundaries(mesh):# remember to remove this
 
 
     return sum_exterior
+
+
+def find_weights(VDG, V0):
+
+    mesh = VDG.mesh()
+    x = SpatialCoordinate(mesh)
+    vec_VDG = VectorFunctionSpace(mesh, VDG.ufl_element())
+    vec_V0 = VectorFunctionSpace(mesh, V0.ufl_element())
+
+    coords_V0 = Function(vec_V0).interpolate(x)
+    coords_VDG = Function(vec_VDG).interpolate(x)
+    coords_VDG_from_V0 = Function(vec_VDG).interpolate(coords_V0)
+
+    diff = Function(VDG).interpolate(1.0/sqrt(inner(coords_VDG - coords_VDG_from_V0,
+                                                    coords_VDG - coords_VDG_from_V0)))
+
+    for coord, coord_old, d in zip(coords_VDG.dat.data[:], coords_VDG_from_V0.dat.data[:], diff.dat.data[:]):
+        print('[%.2f %.2f] [%.2f %.2f] %.2f' % (coord[0], coord[1], coord_old[0], coord_old[1], d))
+
+    return diff
