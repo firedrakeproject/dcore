@@ -56,7 +56,7 @@ def setup_2d_recovery(dirname):
 
     # set up initial conditions
     np.random.seed(0)
-    expr = np.random.randn() + np.random.randn() * x + np.random.randn() * z + np.random.randn() * x * z
+    expr = np.random.randn() + 0.0 * np.random.randn() * x + np.random.randn() * z # + np.random.randn() * x * z
 
     # our actual theta and rho and v
     rho_CG1_true = Function(VCG1, name='true').interpolate(expr)

@@ -698,8 +698,8 @@ def find_weights(VDG, V0):
     coords_VDG = Function(vec_VDG).interpolate(x)
     coords_VDG_from_V0 = Function(vec_VDG).interpolate(coords_V0)
 
-    diff = Function(VDG).interpolate(1.0/sqrt(inner(coords_VDG - coords_VDG_from_V0,
-                                                    coords_VDG - coords_VDG_from_V0)))
+    diff = Function(VDG).interpolate(sqrt(inner(coords_VDG - coords_VDG_from_V0,
+                                                coords_VDG - coords_VDG_from_V0)))
 
     for coord, coord_old, d in zip(coords_VDG.dat.data[:], coords_VDG_from_V0.dat.data[:], diff.dat.data[:]):
         print('[%.2f %.2f] [%.2f %.2f] %.2f' % (coord[0], coord[1], coord_old[0], coord_old[1], d))
