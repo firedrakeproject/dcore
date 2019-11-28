@@ -107,8 +107,8 @@ class CompressibleSolver(TimesteppingSolver):
                          'pc_sc_eliminate_fields': '0, 1',
                          # The reduced operator is not symmetric
                          'condensed_field': {'ksp_type': 'fgmres',
-                                             'ksp_rtol': 1.0e-8,
-                                             'ksp_atol': 1.0e-8,
+                                             'ksp_rtol': 1.0e-12,
+                                             'ksp_atol': 1.0e-12,
                                              'ksp_max_it': 100,
                                              'pc_type': 'gamg',
                                              'pc_gamg_sym_graph': None,

@@ -477,6 +477,7 @@ class Recoverer(object):
         else:
             weights = None
         self.averager = Averager(self.v, self.v_out, weights=weights)
+        self.back_averager = Averager(self.v, self.v_out)  # average back doesn't want weights
 
         # check boundary method options are valid
         if boundary_method is not None:
@@ -518,6 +519,7 @@ class Recoverer(object):
                                                                            method=Boundary_Method.dynamics,
                                                                            eff_coords=eff_coords[i]))
                         # need an extra averager that works on the scalar fields rather than the vector one
+                        # should not use weightings
                         self.extra_averagers.append(Averager(v_scalars[i], v_out_scalars[i]))
 
                     # the boundary recoverer needs to be done on a scalar fields
@@ -541,11 +543,11 @@ class Recoverer(object):
                 self.interpolate_to_vector.interpolate()
             else:
                 self.boundary_recoverer.apply()
-                self.averager.project()
+                self.back_averager.project()
         return self.v_out
 
 
-def find_eff_coords(V0):
+def find_eff_coords(V0, weights=None):
     """
     Takes a function in a field V0 and returns the effective coordindates,
     in a vector DG1 space, of a recovery into a CG1 field. This is for use with the
@@ -556,6 +558,7 @@ def find_eff_coords(V0):
     each component.
 
     :arg V0: the original function space.
+    :arg weights: the weightings for averaging
     """
 
     mesh = V0.mesh()
@@ -583,7 +586,7 @@ def find_eff_coords(V0):
             # average these to find effective coords in CG1
             V0_coords_in_DG1 = Function(Vec_DG1).interpolate(as_vector(x_list))
             eff_coords_in_CG1 = Function(Vec_CG1)
-            eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1)
+            eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1) #!! does vector need weights?
             eff_coords_averager.project()
 
             # obtain these in DG1
@@ -600,7 +603,7 @@ def find_eff_coords(V0):
         # average these to find effective coords in CG1
         V0_coords_in_DG1 = Function(Vec_DG1).interpolate(V0_coords)
         eff_coords_in_CG1 = Function(Vec_CG1)
-        eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1)
+        eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1, weights=weights)
         eff_coords_averager.project()
 
         # obtain these in DG1
