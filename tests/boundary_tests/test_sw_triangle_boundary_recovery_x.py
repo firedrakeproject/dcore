@@ -19,20 +19,20 @@ def setup_2d_recovery(dirname):
     ncolumnsx = int(L/deltax)
     ncolumnsy = int(W/deltay)
 
-    mesh = PeriodicRectangleMesh(ncolumnsx, ncolumnsy, L, W, direction='y', quadrilateral=True)
+    mesh = PeriodicRectangleMesh(ncolumnsx, ncolumnsy, L, W, direction='x', quadrilateral=False)
     x, y = SpatialCoordinate(mesh)
 
     # spaces
     VDG0 = FunctionSpace(mesh, "DG", 0)
     VCG1 = FunctionSpace(mesh, "CG", 1)
     VDG1 = FunctionSpace(mesh, "DG", 1)
-    Vu = FunctionSpace(mesh, "RTCF", 1)
+    Vu = FunctionSpace(mesh, "BDM", 1)
     VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
     VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
 
     # set up initial conditions
     np.random.seed(0)
-    expr = np.random.randn() + np.random.randn() * x
+    expr = np.random.randn() + np.random.randn() * y
 
     # our actual theta and rho and v
     rho_CG1_true = Function(VCG1).interpolate(expr)

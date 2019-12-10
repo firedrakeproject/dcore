@@ -7,8 +7,7 @@ from firedrake import (expression, function, Function, FunctionSpace, Projector,
                        TensorProductElement, FiniteElement, DirichletBC, sqrt,
                        VectorElement, conditional, max_value, TensorFunctionSpace)
 from firedrake.utils import cached_property
-from firedrake.parloops import par_loop, READ, INC, WRITE, RW
-from gusto.configuration import logger
+from firedrake.parloops import par_loop, READ, INC, WRITE
 from pyop2 import ON_TOP, ON_BOTTOM
 import ufl
 import numpy as np
@@ -146,11 +145,8 @@ class Boundary_Recoverer(object):
         VDG1 = FunctionSpace(mesh, "DG", 1)
 
         VuDG1 = VectorFunctionSpace(VDG0.mesh(), "DG", 1)
-        VuCG1 = VectorFunctionSpace(VDG0.mesh(), "CG", 1)
         x = SpatialCoordinate(VDG0.mesh())
         self.interpolator = Interpolator(self.v_CG1, self.v_DG1)
-
-        self.num_ext = Function(VDG0)
 
         # check function spaces of functions
         if self.method == Boundary_Method.dynamics:
@@ -158,7 +154,7 @@ class Boundary_Recoverer(object):
                 raise NotImplementedError("This boundary recovery method requires v1 to be in CG1")
             if v_DG1.function_space() != VDG1:
                 raise NotImplementedError("This boundary recovery method requires v_out to be in DG1")
-            if eff_coords == None:
+            if eff_coords is None:
                 raise ValueError('For dynamics boundary recovery, need to specify effective coordinates')
             elif eff_coords.function_space() != VuDG1:
                 raise NotImplementedError("Need effective coordinates to be in vector DG1 function space")
@@ -186,7 +182,6 @@ class Boundary_Recoverer(object):
         else:
             raise ValueError("Boundary method should be a Boundary Method Enum object.")
 
-
         if self.method == Boundary_Method.dynamics:
 
             # STRATEGY
@@ -195,51 +190,10 @@ class Boundary_Recoverer(object):
             self.act_coords = Function(VuDG1).project(x)  # actual coordinates
             self.eff_coords = eff_coords  # effective coordinates in DG1
             self.output = Function(VDG1)
+            self.on_exterior = find_domain_boundaries(mesh)
 
             shapes = {"nDOFs": self.v_DG1.function_space().finat_element.space_dimension(),
                       "dim": np.prod(VuDG1.shape, dtype=int)}
-
-            num_ext_domain = ("{{[i, j, k, ii, kk]: 0 <= i < {nDOFs} and 0 <= j < {nDOFs} and "
-                              "0 <= k < {dim} and 0 <= ii < {nDOFs} and 0 <= kk < {dim}}}").format(**shapes)
-            num_ext_instructions = ("""
-            <float64> SUM_EXT = 0
-            <float64> dist = 0.0
-            <float64> min_dist = (ACT_COORDS[0,0] - ACT_COORDS[1,0]) ** 2
-            <float64> act_eff_dist = 0.0
-            <float64> dist_i[{dim}] = 0.0
-            <float64> max_dist_i[{dim}] = 0.0
-            """
-            # first find minimum distance between DOFs within the cell
-            # also find max distance in each dimension within that cell
-            """
-            for i
-                for j
-                    dist = 0.0
-                    for k
-                        dist = dist + (ACT_COORDS[i,k] - ACT_COORDS[j,k]) ** 2
-                        dist_i[k] = (ACT_COORDS[i,k] - ACT_COORDS[j,k]) ** 2
-                        max_dist_i[k] = fmax(dist_i[k], max_dist_i[k])
-                    end
-                    min_dist = fmin(dist, min_dist)
-                end
-            end
-            """
-            # measure distance between actual and effective coordinates
-            # if greater than some tolerance (min_dist / 100), then coordinates have been adjusted
-            """
-            for ii
-                act_eff_dist = 0.0
-                for kk
-                    act_eff_dist = act_eff_dist + (ACT_COORDS[ii,kk] - EFF_COORDS[ii,kk]) ** 2
-                    dist_i[kk] = (ACT_COORDS[ii,kk] - EFF_COORDS[ii,kk]) ** 2
-                end
-                if act_eff_dist > min_dist / 100
-                    SUM_EXT = SUM_EXT + 1
-                end
-            end
-            NUM_EXT[0] = SUM_EXT
-            """).format(**shapes)
-
 
             elimin_domain = ("{{[i, ii_loop, jj_loop, kk, ll_loop, mm, iii_loop, kkk_loop, iiii]: "
                              "0 <= i < {nDOFs} and 0 <= ii_loop < {nDOFs} and "
@@ -267,7 +221,7 @@ class Boundary_Recoverer(object):
                             # N.B. several for loops must be executed in numerical order (loopy does not necessarily do this).
                             # For these loops we must manually iterate the index.
                             """
-                            if NUM_EXT[0] > 0.0
+                            if ON_EXT[0] > 0.0
                             """
                             # only do Gaussian elimination for elements with effective coordinates
                             """
@@ -390,7 +344,7 @@ class Boundary_Recoverer(object):
                             """
                             # Having found a, this gives us the coefficients for the Taylor expansion with the actual coordinates.
                             """
-                                if NUM_EXT[0] > 0.0
+                                if ON_EXT[0] > 0.0
                                     if {nDOFs} == 2
                                         DG1[iiii] = a[0] + a[1]*ACT_COORDS[iiii,0]
                                     elif {nDOFs} == 3
@@ -411,19 +365,7 @@ class Boundary_Recoverer(object):
                             end
                             """).format(**shapes)
 
-            _num_ext_kernel = (num_ext_domain, num_ext_instructions)
             self._gaussian_elimination_kernel = (elimin_domain, elimin_insts)
-
-            # find number of external DOFs per cell
-            par_loop(_num_ext_kernel, dx,
-                     {"NUM_EXT": (self.num_ext, WRITE),
-                      "ACT_COORDS": (self.act_coords, READ),
-                      "EFF_COORDS": (self.eff_coords, READ)},
-                     is_loopy_kernel=True)
-
-            for act, eff in zip(self.act_coords.dat.data[:], self.eff_coords.dat.data[:]):
-                print('act [%.2f %.2f %.2f], eff [%.2f %.2f %.2f]' % (act[0], act[1], act[2], eff[0], eff[1], eff[2]))
-
 
         elif self.method == Boundary_Method.physics:
             top_bottom_domain = ("{[i]: 0 <= i < 1}")
@@ -460,7 +402,7 @@ class Boundary_Recoverer(object):
                       "DG1": (self.v_DG1, WRITE),
                       "ACT_COORDS": (self.act_coords, READ),
                       "EFF_COORDS": (self.eff_coords, READ),
-                      "NUM_EXT": (self.num_ext, READ)},
+                      "ON_EXT": (self.on_exterior, READ)},
                      is_loopy_kernel=True)
 
 
@@ -576,8 +518,6 @@ class Recoverer(object):
                                                                  method=Boundary_Method.dynamics,
                                                                  eff_coords=eff_coords)
                 else:
-                    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
-
                     # now, break the problem down into components
                     v_scalars = []
                     v_out_scalars = []
@@ -625,7 +565,7 @@ class Recoverer(object):
 def find_eff_coords(V0, spherical_transformation=False):
     """
     Takes a function in a field V0 and returns the effective coordindates,
-    in a vector DG1 spacem of recovery into a CG1 field. This is for use with the
+    in a vector DG1 space, of a recovery into a CG1 field. This is for use with the
     Boundary_Recoverer, as it facilitates the Gaussian elimination used to get
     second-order recovery at boundaries.
 
@@ -636,10 +576,9 @@ def find_eff_coords(V0, spherical_transformation=False):
     :arg spherical_transformation: whether to do recovery with spherical transformation option.
     """
 
-
     mesh = V0.mesh()
-    VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
-    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
+    Vec_CG1 = VectorFunctionSpace(mesh, "CG", 1)
+    Vec_DG1 = VectorFunctionSpace(mesh, "DG", 1)
     x = SpatialCoordinate(mesh)
 
     if V0.ufl_element().value_size() > 1:
@@ -660,29 +599,30 @@ def find_eff_coords(V0, spherical_transformation=False):
             x_list = [V0_coords[i] for V0_coords in V0_coords_list]
 
             # average these to find effective coords in CG1
-            V0_coords_in_DG1 = Function(VuDG1).interpolate(as_vector(x_list))
-            eff_coords_in_CG1 = Function(VuCG1)
-            eff_coords_averager = Recoverer(V0_coords_in_DG1, eff_coords_in_CG1, VDG=VuDG1, spherical_transformation=spherical_transformation)
+            V0_coords_in_DG1 = Function(Vec_DG1).interpolate(as_vector(x_list))
+            eff_coords_in_CG1 = Function(Vec_CG1)
+            eff_coords_averager = Recoverer(V0_coords_in_DG1, eff_coords_in_CG1, VDG=Vec_DG1, spherical_transformation=spherical_transformation)
             eff_coords_averager.project()
 
             # obtain these in DG1
-            eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
+            eff_coords_in_DG1 = Function(Vec_DG1).interpolate(eff_coords_in_CG1)
             eff_coords_list.append(correct_eff_coords(eff_coords_in_DG1))
 
         return eff_coords_list
 
     else:
         # find the coordinates at DOFs in V0
-        VuV0 = VectorFunctionSpace(mesh, V0.ufl_element())
-        V0_coords = Function(VuV0).project(x)
+        Vec_V0 = VectorFunctionSpace(mesh, V0.ufl_element())
+        V0_coords = Function(Vec_V0).project(x)
 
         # average these to find effective coords in CG1
-        V0_coords_in_DG1 = Function(VuDG1).interpolate(V0_coords)
-        eff_coords_in_CG1 = Function(VuCG1)
-        eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1).project()
+        V0_coords_in_DG1 = Function(Vec_DG1).interpolate(V0_coords)
+        eff_coords_in_CG1 = Function(Vec_CG1)
+        eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1)
+        eff_coords_averager.project()
 
         # obtain these in DG1
-        eff_coords_in_DG1 = Function(VuDG1).interpolate(eff_coords_in_CG1)
+        eff_coords_in_DG1 = Function(Vec_DG1).interpolate(eff_coords_in_CG1)
 
         return correct_eff_coords(eff_coords_in_DG1)
 
@@ -706,7 +646,8 @@ def correct_eff_coords(eff_coords):
     # obtain different coords in DG1
     DG1_coords = Function(VuDG1).interpolate(x)
     CG1_coords_from_DG1 = Function(VuCG1)
-    averager = Averager(DG1_coords, CG1_coords_from_DG1).project()
+    averager = Averager(DG1_coords, CG1_coords_from_DG1)
+    averager.project()
     DG1_coords_from_averaged_CG1 = Function(VuDG1).interpolate(CG1_coords_from_DG1)
     DG1_coords_diff = Function(VuDG1).interpolate(DG1_coords - DG1_coords_from_averaged_CG1)
 
@@ -715,3 +656,50 @@ def correct_eff_coords(eff_coords):
     adjusted_coords.interpolate(eff_coords + DG1_coords_diff)
 
     return adjusted_coords
+
+
+def find_domain_boundaries(mesh):# remember to remove this
+    """
+    Makes a scalar DG0 function whose values are 0. everywhere except for in
+    cells on the boundary of the domain, where the values are 1.0.
+
+    This allows boundary cells to be identified easily.
+
+    :arg CG1: a CG1 field.
+    """
+
+    DG0 = FunctionSpace(mesh, "DG", 0)
+    CG1 = FunctionSpace(mesh, "CG", 1)
+
+    on_exterior = Function(CG1)
+
+    bc_codes = ['on_boundary', 'top', 'bottom']
+    bcs = [DirichletBC(CG1, Constant(1.0), bc_code, method='geometric') for bc_code in bc_codes]
+
+    for bc in bcs:
+        try:
+            bc.apply(on_exterior)
+        except ValueError:
+            pass
+
+    sum_exterior = Function(DG0).interpolate(Constant(0.0))
+
+    shapes = {"nDOFs": CG1.finat_element.space_dimension()}
+
+    num_ext_domain = ("{{[i]: 0 <= i < {nDOFs}}}").format(**shapes)
+    num_ext_instructions = ("""
+                            for i
+                                SUM_EXT[0] = SUM_EXT[0] + ON_EXT[i]
+                            end
+                            """)
+
+    _num_ext_kernel = (num_ext_domain, num_ext_instructions)
+
+    # find number of external DOFs per cell
+    par_loop(_num_ext_kernel, dx,
+             {"SUM_EXT": (sum_exterior, WRITE),
+              "ON_EXT": (on_exterior, READ)},
+                is_loopy_kernel=True)
+
+
+    return sum_exterior
