@@ -10,7 +10,7 @@ from firedrake import (as_vector, CubedSphereMesh, SpatialCoordinate,
 import numpy as np
 
 
-def setup_3d_recovery(dirname):
+def setup_3d_spherical_recovery(dirname):
 
     radius = 1.
 
@@ -71,16 +71,16 @@ def setup_3d_recovery(dirname):
     return rho_diff, v_diff
 
 
-def run_3d_recovery(dirname):
+def run_3d_spherical_recovery(dirname):
 
-    rho_diff, v_diff = setup_3d_recovery(dirname)
+    rho_diff, v_diff = setup_3d_spherical_recovery(dirname)
     return rho_diff, v_diff
 
 
-def test_3d_boundary_recovery(tmpdir):
+def test_3d_spherical_recovery(tmpdir):
 
     dirname = str(tmpdir)
-    rho_diff, v_diff = run_3d_recovery(dirname)
+    rho_diff, v_diff = run_3d_spherical_recovery(dirname)
 
     tolerance = 1e-2
     assert rho_diff < tolerance

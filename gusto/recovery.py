@@ -12,6 +12,7 @@ from pyop2 import ON_TOP, ON_BOTTOM
 import ufl
 import numpy as np
 from enum import Enum
+from gusto.configuration import logger
 
 __all__ = ["Averager", "Boundary_Method", "Boundary_Recoverer", "Recoverer"]
 

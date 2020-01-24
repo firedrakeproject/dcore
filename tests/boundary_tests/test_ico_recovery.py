@@ -9,7 +9,7 @@ from firedrake import (as_vector, IcosahedralSphereMesh, SpatialCoordinate,
 import numpy as np
 
 
-def setup_2d_recovery(dirname):
+def setup_icosahedral_recovery(dirname):
 
     radius = 1.
 
@@ -45,7 +45,6 @@ def setup_2d_recovery(dirname):
     rho_recoverer.project()
     v_recoverer.project()
 
-    # import pdb; pdb.set_trace()
 
     rho_diff = errornorm(rho_CG1, rho_CG1_true) / norm(rho_CG1_true)
     v_diff = errornorm(v_CG1, v_CG1_true) / norm(v_CG1_true)
@@ -53,17 +52,17 @@ def setup_2d_recovery(dirname):
     return (rho_diff, v_diff)
 
 
-def run_2d_recovery(dirname):
+def run_icosahedral_recovery(dirname):
 
-    (rho_diff, v_diff) = setup_2d_recovery(dirname)
+    (rho_diff, v_diff) = setup_icosahedral_recovery(dirname)
     return (rho_diff, v_diff)
 
 
-def test_2d_boundary_recovery(tmpdir):
+def test_icosahedral_recovery(tmpdir):
 
     dirname = str(tmpdir)
-    rho_diff, v_diff = run_2d_recovery(dirname)
+    rho_diff, v_diff = run_icosahedral_recovery(dirname)
 
     tolerance = 1e-7
-    # assert rho_diff < tolerance
+    assert rho_diff < tolerance
     assert v_diff < tolerance

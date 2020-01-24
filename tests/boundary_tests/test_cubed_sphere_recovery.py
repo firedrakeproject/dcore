@@ -9,7 +9,7 @@ from firedrake import (as_vector, CubedSphereMesh, SpatialCoordinate,
 import numpy as np
 
 
-def setup_2d_recovery(dirname):
+def setup_cubed_sphere_recovery(dirname):
 
     radius = 1.
 
@@ -41,12 +41,11 @@ def setup_2d_recovery(dirname):
 
     # make the recoverers and do the recovery
     rho_recoverer = Recoverer(rho_DG0, rho_CG1, VDG=VDG1)
-    v_recoverer = Recoverer(v_Vu, v_CG1, VDG=VuDG1, vector_transformation=True)
+    v_recoverer = Recoverer(v_Vu, v_CG1, VDG=VuDG1, spherical_transformation=True)
 
-    # rho_recoverer.project()
+    rho_recoverer.project()
     v_recoverer.project()
 
-    # import pdb; pdb.set_trace()
 
     rho_diff = errornorm(rho_CG1, rho_CG1_true) / norm(rho_CG1_true)
     v_diff = errornorm(v_CG1, v_CG1_true) / norm(v_CG1_true)
@@ -54,17 +53,17 @@ def setup_2d_recovery(dirname):
     return (rho_diff, v_diff)
 
 
-def run_2d_recovery(dirname):
+def run_cubed_sphere_recovery(dirname):
 
-    (rho_diff, v_diff) = setup_2d_recovery(dirname)
+    (rho_diff, v_diff) = setup_cubed_sphere_recovery(dirname)
     return (rho_diff, v_diff)
 
 
-def test_2d_boundary_recovery(tmpdir):
+def test_cubed_sphere_recovery(tmpdir):
 
     dirname = str(tmpdir)
-    rho_diff, v_diff = run_2d_recovery(dirname)
+    rho_diff, v_diff = run_cubed_sphere_recovery(dirname)
 
     tolerance = 1e-7
-    # assert rho_diff < tolerance
+    assert rho_diff < tolerance
     assert v_diff < tolerance

@@ -500,7 +500,7 @@ class State(object):
         for name, profile in reference_profiles:
             field = getattr(self.fields, name)
             ref = self.fields(name+'bar', field.function_space(), False)
-            ref.interpolate(profile)
+            ref.project(profile)
 
     def _build_spaces(self, mesh, vertical_degree, horizontal_degree, family):
         """
