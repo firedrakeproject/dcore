@@ -140,9 +140,18 @@ class Boundary_Recoverer(object):
         mesh = v_CG1.function_space().mesh()
         VDG0 = FunctionSpace(mesh, "DG", 0)
         VCG1 = FunctionSpace(mesh, "CG", 1)
-        VDG1 = FunctionSpace(mesh, "DG", 1)
 
-        VuDG1 = VectorFunctionSpace(VDG0.mesh(), "DG", 1)
+        if VDG0.extruded:
+            cell = mesh._base_mesh.ufl_cell().cellname()
+            DG1_hori_elt = FiniteElement("DG", cell, 1, variant="equispaced")
+            DG1_vert_elt = FiniteElement("DG", interval, 1, variant="equispaced")
+            DG1_element = TensorProductElement(DG1_hori_elt, DG1_vert_elt)
+        else:
+            cell = mesh.ufl_cell().cellname()
+            DG1_element = FiniteElement("DG", cell, 1, variant="equispaced")
+        VDG1 = FunctionSpace(mesh, DG1_element)
+
+        VuDG1 = VectorFunctionSpace(VDG0.mesh(), DG1_element)
         x = SpatialCoordinate(VDG0.mesh())
         self.interpolator = Interpolator(self.v_CG1, self.v_DG1)
 
@@ -166,8 +175,8 @@ class Boundary_Recoverer(object):
                 raise NotImplementedError('The physics boundary method only works on extruded meshes')
             # base spaces
             cell = mesh._base_mesh.ufl_cell().cellname()
-            w_hori = FiniteElement("DG", cell, 0)
-            w_vert = FiniteElement("CG", interval, 1)
+            w_hori = FiniteElement("DG", cell, 0, variant="equispaced")
+            w_vert = FiniteElement("CG", interval, 1, variant="equispaced")
             # build element
             theta_element = TensorProductElement(w_hori, w_vert)
             # spaces
@@ -184,7 +193,6 @@ class Boundary_Recoverer(object):
 
             # STRATEGY
             # obtain a coordinate field for all the nodes
-            VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
             self.act_coords = Function(VuDG1).project(x)  # actual coordinates
             self.eff_coords = eff_coords  # effective coordinates in DG1
             self.output = Function(VDG1)
@@ -459,9 +467,18 @@ class Recoverer(object):
                 mesh = self.V.mesh()
                 # this ensures we get the pure function space, not an indexed function space
                 V0 = FunctionSpace(mesh, self.v_in.function_space().ufl_element())
-                VDG1 = FunctionSpace(mesh, "DG", 1)
                 VCG1 = FunctionSpace(mesh, "CG", 1)
                 eff_coords = find_eff_coords(V0)
+
+                if V0.extruded:
+                    cell = mesh._base_mesh.ufl_cell().cellname()
+                    DG1_hori_elt = FiniteElement("DG", cell, 1, variant="equispaced")
+                    DG1_vert_elt = FiniteElement("DG", interval, 1, variant="equispaced")
+                    DG1_element = TensorProductElement(DG1_hori_elt, DG1_vert_elt)
+                else:
+                    cell = mesh.ufl_cell().cellname()
+                    DG1_element = FiniteElement("DG", cell, 1, variant="equispaced")
+                VDG1 = FunctionSpace(mesh, DG1_element)
 
                 if self.V.value_size == 1:
 
@@ -469,6 +486,8 @@ class Recoverer(object):
                                                                  method=Boundary_Method.dynamics,
                                                                  eff_coords=eff_coords)
                 else:
+                    VuDG1 = VectorFunctionSpace(mesh, DG1_element)
+
                     # now, break the problem down into components
                     v_scalars = []
                     v_out_scalars = []
@@ -524,8 +543,17 @@ def find_eff_coords(V0):
     """
 
     mesh = V0.mesh()
+    if V0.extruded:
+        cell = mesh._base_mesh.ufl_cell().cellname()
+        DG1_hori_elt = FiniteElement("DG", cell, 1, variant="equispaced")
+        DG1_vert_elt = FiniteElement("DG", interval, 1, variant="equispaced")
+        DG1_element = TensorProductElement(DG1_hori_elt, DG1_vert_elt)
+    else:
+        cell = mesh.ufl_cell().cellname()
+        DG1_element = FiniteElement("DG", cell, 1, variant="equispaced")
+
     Vec_CG1 = VectorFunctionSpace(mesh, "CG", 1)
-    Vec_DG1 = VectorFunctionSpace(mesh, "DG", 1)
+    Vec_DG1 = VectorFunctionSpace(mesh, DG1_element)
     x = SpatialCoordinate(mesh)
 
     if V0.ufl_element().value_size() > 1:
@@ -583,8 +611,19 @@ def correct_eff_coords(eff_coords):
     """
 
     mesh = eff_coords.function_space().mesh()
-    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
     VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
+
+    if VuCG1.extruded:
+        cell = mesh._base_mesh.ufl_cell().cellname()
+        DG1_hori_elt = FiniteElement("DG", cell, 1, variant="equispaced")
+        DG1_vert_elt = FiniteElement("DG", interval, 1, variant="equispaced")
+        DG1_element = TensorProductElement(DG1_hori_elt, DG1_vert_elt)
+    else:
+        cell = mesh.ufl_cell().cellname()
+        DG1_element = FiniteElement("DG", cell, 1, variant="equispaced")
+
+    VuDG1 = VectorFunctionSpace(mesh, DG1_element)
+
     x = SpatialCoordinate(mesh)
 
     if eff_coords.function_space() != VuDG1:
@@ -639,9 +678,9 @@ def find_domain_boundaries(mesh):# remember to remove this
                                 SUM_EXT[0] = SUM_EXT[0] + ON_EXT[i]
                             end
                             """)
-    
+
     _num_ext_kernel = (num_ext_domain, num_ext_instructions)
-    
+
     # find number of external DOFs per cell
     par_loop(_num_ext_kernel, dx,
              {"SUM_EXT": (sum_exterior, WRITE),

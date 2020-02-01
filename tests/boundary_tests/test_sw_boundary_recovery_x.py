@@ -5,11 +5,11 @@ the boundary values under some analytic forms.
 from gusto import *
 from firedrake import (as_vector, PeriodicRectangleMesh, SpatialCoordinate,
                        FunctionSpace, Function, errornorm,
-                       VectorFunctionSpace, norm)
+                       VectorFunctionSpace, norm, FiniteElement)
 import numpy as np
 
 
-def setup_2d_recovery(dirname):
+def setup_sw_x_recovery(dirname):
 
     L = 100.
     W = 100.
@@ -22,13 +22,17 @@ def setup_2d_recovery(dirname):
     mesh = PeriodicRectangleMesh(ncolumnsx, ncolumnsy, L, W, direction='x', quadrilateral=True)
     x, y = SpatialCoordinate(mesh)
 
+    # DG1
+    cell = mesh.ufl_cell().cellname()
+    DG1_elt = FiniteElement("DG", cell, 1, variant="equispaced")
+    VDG1 = FunctionSpace(mesh, DG1_elt)
+    VuDG1 = VectorFunctionSpace(mesh, DG1_elt)
+
     # spaces
     VDG0 = FunctionSpace(mesh, "DG", 0)
     VCG1 = FunctionSpace(mesh, "CG", 1)
-    VDG1 = FunctionSpace(mesh, "DG", 1)
     Vu = FunctionSpace(mesh, "RTCF", 1)
     VuCG1 = VectorFunctionSpace(mesh, "CG", 1)
-    VuDG1 = VectorFunctionSpace(mesh, "DG", 1)
 
     # set up initial conditions
     np.random.seed(0)
@@ -57,16 +61,16 @@ def setup_2d_recovery(dirname):
     return (rho_diff, v_diff)
 
 
-def run_2d_recovery(dirname):
+def run_sw_x_recovery(dirname):
 
-    (rho_diff, v_diff) = setup_2d_recovery(dirname)
+    (rho_diff, v_diff) = setup_sw_x_recovery(dirname)
     return (rho_diff, v_diff)
 
 
-def test_2d_boundary_recovery(tmpdir):
+def test_sw_x_boundary_recovery(tmpdir):
 
     dirname = str(tmpdir)
-    rho_diff, v_diff = run_2d_recovery(dirname)
+    rho_diff, v_diff = run_sw_x_recovery(dirname)
 
     tolerance = 1e-7
     assert rho_diff < tolerance

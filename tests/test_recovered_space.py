@@ -40,7 +40,7 @@ def setup_recovered_space(dirname):
     # spaces
     Vpsi = FunctionSpace(mesh, "CG", 2)
     VDG0 = FunctionSpace(mesh, "DG", 0)
-    VDG1 = FunctionSpace(mesh, "DG", 1)
+    VDG1 = state.spaces("DG1")
     VCG1 = FunctionSpace(mesh, "CG", 1)
 
     # set up tracer field

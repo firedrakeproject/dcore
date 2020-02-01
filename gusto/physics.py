@@ -214,7 +214,7 @@ class Fallout(Physics):
         # determine whether to do recovered space advection scheme
         # if horizontal and vertical degrees are 0 do recovered space
         if state.horizontal_degree == 0 and state.vertical_degree == 0:
-            VDG1 = FunctionSpace(Vt.mesh(), "DG", 1)
+            VDG1 = state.spaces("DG1")
             VCG1 = FunctionSpace(Vt.mesh(), "CG", 1)
             Vbrok = FunctionSpace(Vt.mesh(), BrokenElement(Vt.ufl_element()))
             boundary_method = Boundary_Method.dynamics

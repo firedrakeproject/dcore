@@ -173,10 +173,10 @@ else:
 
 # Set up advection schemes
 if recovered:
-    VDG1 = FunctionSpace(mesh, "DG", 1)
+    VDG1 = state.spaces("DG1")
     VCG1 = FunctionSpace(mesh, "CG", 1)
     Vt_brok = FunctionSpace(mesh, BrokenElement(Vt.ufl_element()))
-    Vu_DG1 = VectorFunctionSpace(mesh, "DG", 1)
+    Vu_DG1 = VectorFunctionSpace(mesh, VDG1.ufl_element())
     Vu_CG1 = VectorFunctionSpace(mesh, "CG", 1)
 
     u_opts = RecoveredOptions(embedding_space=Vu_DG1,
