@@ -6,7 +6,7 @@ from firedrake import (expression, function, Function, FunctionSpace, Projector,
                        Interpolator, BrokenElement, interval, Constant,
                        TensorProductElement, FiniteElement, DirichletBC)
 from firedrake.utils import cached_property
-from gusto import kernels
+from gusto import kernels, coord_transforms
 import ufl
 from enum import Enum
 
@@ -207,10 +207,15 @@ class Recoverer(object):
     :arg v_out: :class:`.Function` to put the result in. (e.g. a CG1 function)
     :arg VDG: optional :class:`.FunctionSpace`. If not None, v_in is interpolated
          to this space first before recovery happens.
-    :arg boundary_method: an Enum object, .
+    :arg boundary_method: an Enum object, which sets whether or not to do an
+         additional boundary recovery step using the BoundaryRecoverer, and which
+         method (physics or dynamics) to use. The default value is None.
+    :arg polar_transform: a Boolean setting whether to transform to polar
+         coordinates to do averaging. Only valid for vector fields. Default is False.
     """
 
-    def __init__(self, v_in, v_out, VDG=None, boundary_method=None):
+    def __init__(self, v_in, v_out, VDG=None,
+                 boundary_method=None, polar_transform=False):
 
         # check if v_in is valid
         if isinstance(v_in, expression.Expression) or not isinstance(v_in, (ufl.core.expr.Expr, function.Function)):
@@ -228,6 +233,7 @@ class Recoverer(object):
 
         self.VDG = VDG
         self.boundary_method = boundary_method
+        self.polar_transform = polar_transform
         self.averager = Averager(self.v, self.v_out)
 
         # check boundary method options are valid
@@ -288,6 +294,44 @@ class Recoverer(object):
                     # so need to extract component and restore it after the boundary recovery is done
                     self.interpolate_to_vector = Interpolator(as_vector(v_out_scalars), self.v_out)
 
+        # Now set polar transform options
+        if polar_transform:
+            # First check if polar transform is valid
+            mesh = self.VDG.mesh()
+            if self.VDG.shape != (mesh.geometric_dimension(),):
+                raise ValueError("""
+                                 The polar transform option is not valid when field
+                                 has shape %s and geometric dimension of space is %i
+                                 """ % (self.VDG.shape, mesh.geometric_dimension()))
+            elif mesh.geometric_dimension() not in [2, 3]:
+                raise ValueError('The polar transform option is not valid for a geometric dimension of %i'
+                                 % mesh.geometric_dimension())
+
+            # Converts vector components into polar coordinates for the averaging step
+            #!! I'm not really sure what these spaces should be, but bear in mind we want
+            # coordinates for RTCF and BDM spaces!!
+            # Really it should be something like a list of vector function spaces for each point...
+            vec_V_in = self.v_in.function_space()
+            vec_V_out = self.v_out.function_space()
+            if mesh.geometric_dimension() == 2:
+                xy_coords = SpatialCoordinate(mesh)
+                rphi_coords = coord_transforms.rphi_from_xy(xy_coords[0], xy_coords[1])
+                coords_v_in_cartesian = Function(vec_V_in).interpolate(as_vector(xy_coords))
+                coords_VDG_cartesian = Function(self.VDG).interpolate(coords_v_in_cartesian)
+                coords_v_out_polar = Function(vec_V_out).interpolate(as_vector(rphi_coords))
+                self.convert_to_polar = Interpolator(as_vector(coord_transforms.rphi_vector_from_xy(self.v,
+                                                                                                    coords_VDG_cartesian)),
+                                                     self.v)
+
+                self.convert_to_cartesian = Interpolator(as_vector(coord_transforms.xy_vector_from_rphi(self.v_out,
+                                                                                                        coords_v_out_polar)),
+                                                         self.v_out)
+
+            elif mesh.geometric_dimension() == 3:
+                raise NotImplementedError('I need to implement finding the coordinates of RTCF and BDM spaces')
+
+
+
     def project(self):
         """
         Perform the fully specified recovery.
@@ -295,6 +339,8 @@ class Recoverer(object):
 
         if self.interpolator is not None:
             self.interpolator.interpolate()
+        if self.polar_transform:
+            self.convert_to_polar.interpolate()
         self.averager.project()
         if self.boundary_method is not None:
             if self.V.value_size > 1:
@@ -306,6 +352,9 @@ class Recoverer(object):
             else:
                 self.boundary_recoverer.apply()
                 self.averager.project()
+        if self.polar_transform:
+            self.convert_to_cartesian.interpolate()
+
         return self.v_out
 
 
