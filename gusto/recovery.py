@@ -4,13 +4,18 @@ The recovery operators used for lowest-order advection schemes.
 from firedrake import (expression, function, Function, FunctionSpace, Projector,
                        VectorFunctionSpace, SpatialCoordinate, as_vector,
                        Interpolator, BrokenElement, interval, Constant,
-                       TensorProductElement, FiniteElement, DirichletBC)
+                       TensorProductElement, FiniteElement, DirichletBC,
+                       dS_h, dS_v, ds_tb, ds_v, dS, ds, inner, TestFunction,
+                       TrialFunction, solve, FacetNormal, NonlinearVariationalProblem,
+                       NonlinearVariationalSolver)
 from firedrake.utils import cached_property
 from gusto import kernels
 import ufl
+import numpy as np
 from enum import Enum
 
-__all__ = ["Averager", "Boundary_Method", "Boundary_Recoverer", "Recoverer"]
+__all__ = ["Averager", "Boundary_Method", "Boundary_Recoverer",
+           "Recoverer", "HDiv_Coords"]
 
 
 class Averager(object):
@@ -448,3 +453,156 @@ def find_domain_boundaries(mesh):
     on_exterior_DG0.interpolate(on_exterior_CG1)
 
     return on_exterior_DG0
+
+
+def HDiv_Coords(V):
+    """
+    Finds the coordinates of DoFs for a lowest order HDiv space.
+    The coordinates are returned as a list of length d of HDiv
+    functions where d is the geometric dimension of the space is d.
+    These functions will be in the broken function space since in
+    general coordinate fields are discontinuous.
+    The coefficients of the ith function in this list are the
+    coordinates in the ith Cartesian coordinate.
+
+    These do not contain Jacobian terms and should not be used
+    in any way other than reading the coefficient values.
+
+    :arg: V: the HDiv function space.
+    """
+
+    # We first break the space, as coordinate field is generally discontinuous
+    mesh = V.mesh()
+    V_brok = FunctionSpace(mesh, BrokenElement(V.ufl_element()))
+    num_dofs = V_brok.dim()
+
+    d = mesh.geometric_dimension()
+    x = SpatialCoordinate(mesh)
+
+    # # We are attempting to find the position of a series of vectors
+    # # We can find the ith coordinate by doing
+    # # x_i = dot([x_i, x_i, x_i], [v_x, v_y, v_z]) / dot([1, 1, 1], [v_x, v_y, v_z])
+    #
+    # # Create coordinate functions like [x_i, x_i, ...] for each i
+    # ith_coord_vector = [[x[i] for j in range(d)] for i in range(d)]
+    # ith_coord_field = [Function(V_brok) for i in range(d)]
+    #
+    # for i in range(d):
+    #     ith_coord_field[i].project(as_vector(ith_coord_vector[i]))
+    #
+    # # Vector size
+    # one_vector = [1.0 for i in range(d)]
+    # vector_size = Function(V_brok).project(as_vector(one_vector))
+    #
+    # # Make final coordinate fields
+    # coordinates = [Function(V_brok) for i in range(d)]
+    #
+    # # x_i = x_i*(v_x + v_y + v_z) / (v_x + v_y + v_z)
+    # for i in range(d):
+    #     coordinates[i].dat.data[:] = (ith_coord_field[i].dat.data[:] /
+    #                                   vector_size.dat.data[:])
+    # import pdb; pdb.set_trace()
+
+    ij_coord_vector = [[[0.0 for i in range(d)] for j in range(d)] for k in range(d)]
+    ij_coord_field = [[Function(V_brok) for i in range(d)] for j in range(d)]
+
+    # Fill ij_coord_vector with coordinate vectors
+    for i in range(d):
+        for j in range(d):
+            ij_coord_vector[i][j][j] = x[i]
+
+    # Project the coordinates into fields
+    for i in range(d):
+        for j in range(d):
+            surface_project(ij_coord_field[i][j], as_vector(ij_coord_vector[i][j]))
+
+    # Find signs of vectors
+    coord_signs = np.zeros((d, num_dofs))
+    for i in range(d):
+        coord_signs[i][:] = 1.0
+        for j in range(d):
+            coord_signs[i][:] *= np.sign(ij_coord_field[i][j].dat.data[:])
+
+    # Find magnitude of coordinates
+    coordinates = [Function(V_brok) for i in range(d)]
+    for i in range(d):
+        coordinates[i].dat.data[:] = 0.0
+        for j in range(d):
+            coordinates[i].dat.data[:] += ij_coord_field[i][j].dat.data[:] ** 2
+        coordinates[i].dat.data[:] = np.sqrt(coordinates[i].dat.data[:])
+
+    # Find areas
+    one_vectors = [[0.0 for i in range(d)] for j in range(d)]
+    i_areas = [Function(V_brok) for i in range(d)]
+    areas = np.zeros(num_dofs)
+
+    # Fill one vectors
+    for i in range(d):
+        one_vectors[i][i] = 1.0
+
+    # Project one vectors into i areas
+    for i in range(d):
+        surface_project(i_areas[i], as_vector(one_vectors[i]))
+        # Add contribution to obtain total area
+        areas[:] += i_areas[i].dat.data[:] ** 2
+    areas[:] = np.sqrt(areas[:])
+
+    # Combine these to obtain the coordinates
+    for i in range(d):
+        coordinates[i].dat.data[:] *= (coord_signs[i][:] / areas[:])
+
+
+    import pdb; pdb.set_trace()
+
+    return coordinates
+
+
+def surface_project(target_function, rhs_expression):
+    """
+    This projects an expression or function by evaluating along
+    surfaces of the domain. i.e. find the f \in V such that
+    \int dot(\psi, f) dS = \int dot(\psi, g) dS \forall \psi \in V,
+    where g is the right hand side expression/function.
+
+    :arg target_function: the LHS solution.
+    :arg rhs_expression: the RHS expression/function to be evaluated.
+    """
+
+    V = target_function.function_space()
+    Vtrace = FunctionSpace(V.mesh(), "HDiv Trace", degree=1)
+    n = FacetNormal(V.mesh())
+    dl = TestFunction(Vtrace)
+
+    psi = TestFunction(V)
+    trial = TrialFunction(V)
+    l = Function(Vtrace)
+
+    import pdb; pdb.set_trace()
+
+
+    # Get total surface element
+    if V.extruded:
+        dS_int = dS_v + dS_h
+        ds_int = ds_tb + ds_v
+    else:
+        dS_int = dS
+        ds_int = ds
+
+    lhs = (dl('+') * inner(n('+'), target_function('+')) * dS_int +
+           dl('-') * inner(n('-'), target_function('-')) * dS_int +
+           dl * inner(n, target_function) * ds_int)
+    rhs = (dl('+') * inner(n('+'), rhs_expression) * dS_int +
+           dl('-') * inner(n('-'), rhs_expression) * dS_int +
+           dl * inner(n, rhs_expression) * ds_int)
+
+    eqn = lhs - rhs
+
+    prob = NonlinearVariationalProblem(eqn, target_function)
+    solver = NonlinearVariationalSolver(prob)
+    solver.solve()
+
+    # lhs = ((inner(psi('+'), trial('+'))) * dS_int +
+    #        inner(psi, trial) * ds_int)
+    # rhs = inner(psi('+'), rhs_expression) * dS_int + inner(psi, rhs_expression) * ds_int
+
+    # solve(lhs == rhs, target_function)
