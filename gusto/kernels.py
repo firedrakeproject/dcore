@@ -310,14 +310,15 @@ class Average(object):
                  is_loopy_kernel=True)
 
 
-class AverageWeightings(object):
+class NodeMultiplicity(object):
     """
     A kernel for finding the weights for the Averager object.
+    These are simply the multiplicity of nodes shared between cells.
 
     :arg V: The FunctionSpace of the target field for the Averager.
     """
 
-    def __init__(self, V):
+    def __init__(self, V, coords_from_V0=None, coords=None):
 
         shapes = {"nDOFs": V.finat_element.space_dimension(),
                   "dim": np.prod(V.shape, dtype=int)}
@@ -345,6 +346,45 @@ class AverageWeightings(object):
 
         par_loop(self._kernel, dx,
                  {"w": (w, INC)},
+                 is_loopy_kernel=True)
+
+
+class AverageWeightings(object):
+    """
+    A kernel for finding the weights for the Averager object.
+
+    :arg V: The FunctionSpace of the target field for the Averager.
+    """
+
+    def __init__(self, V):
+
+        shapes = {"nDOFs": V.finat_element.space_dimension(),
+                  "dim": np.prod(V.shape, dtype=int)}
+
+        domain = "{{[i, j]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}".format(**shapes)
+
+        # w is the weights
+        instrs = (
+            """
+            for i
+                for j
+                    w[i,j] = w[i,j] + 1.0 / DIST[i,j]
+                end
+            end
+            """)
+
+        self._kernel = (domain, instrs)
+
+    def apply(self, w, distances):
+        """
+        Perform the par loop for calculating the weightings for the Averager.
+
+        :arg w: the field to store the weights in.
+        :arg distances: the distances providing the weights.
+        """
+
+        par_loop(self._kernel, dx,
+                 {"w": (w, INC), "DIST": (distances, READ)},
                  is_loopy_kernel=True)
 
 

@@ -44,6 +44,7 @@ class Averager(object):
         self.v = v
         self.v_out = v_out
         self.V = v_out.function_space()
+        self.weighted = False
 
         # Check the number of local dofs
         if self.v_out.function_space().finat_element.space_dimension() != self.v.function_space().finat_element.space_dimension():
@@ -58,8 +59,12 @@ class Averager(object):
         """
         w = Function(self.V)
 
-        weight_kernel = kernels.AverageWeightings(self.V)
-        weight_kernel.apply(w)
+        if self.weighted:
+            weight_kernel = kernels.AverageWeightings(self.V)
+            weight_kernel.apply(w, self.distances)
+        else:
+            weight_kernel = kernels.NodeMultiplicity(self.V)
+            weight_kernel.apply(w)
 
         return w
 
@@ -212,7 +217,9 @@ class Recoverer(object):
     :arg v_out: :class:`.Function` to put the result in. (e.g. a CG1 function)
     :arg VDG: optional :class:`.FunctionSpace`. If not None, v_in is interpolated
          to this space first before recovery happens.
-    :arg boundary_method: an Enum object, .
+    :arg boundary_method: an Enum object, describing the method to use for
+         recovering at the boundaries.
+    :arg weighted:
     """
 
     def __init__(self, v_in, v_out, VDG=None, boundary_method=None):
@@ -455,7 +462,7 @@ def find_domain_boundaries(mesh):
     return on_exterior_DG0
 
 
-def HDiv_Coords(V):
+def HDiv_Coords(V, pure_coords=True):
     """
     Finds the coordinates of DoFs for a lowest order HDiv space.
     The coordinates are returned as a list of length d of HDiv
@@ -469,7 +476,17 @@ def HDiv_Coords(V):
     in any way other than reading the coefficient values.
 
     :arg: V: the HDiv function space.
+    :arg pure_coords: If True, returns the coordinates normalised
+                      by the face area / edge length. If False, this
+                      does not happen (meaning that the field can be
+                      interpolated into another space as usual.)
     """
+
+    # Check for valid spaces
+    if V.extruded:
+        raise NotImplementedError('I am not confident that this will work yet on extruded meshes.')
+    elif V.ufl_element()._short_name == 'RT':
+        raise ValueError('This does not work for RT spaces.')
 
     # We first break the space, as coordinate field is generally discontinuous
     mesh = V.mesh()
@@ -478,30 +495,6 @@ def HDiv_Coords(V):
 
     d = mesh.geometric_dimension()
     x = SpatialCoordinate(mesh)
-
-    # # We are attempting to find the position of a series of vectors
-    # # We can find the ith coordinate by doing
-    # # x_i = dot([x_i, x_i, x_i], [v_x, v_y, v_z]) / dot([1, 1, 1], [v_x, v_y, v_z])
-    #
-    # # Create coordinate functions like [x_i, x_i, ...] for each i
-    # ith_coord_vector = [[x[i] for j in range(d)] for i in range(d)]
-    # ith_coord_field = [Function(V_brok) for i in range(d)]
-    #
-    # for i in range(d):
-    #     ith_coord_field[i].project(as_vector(ith_coord_vector[i]))
-    #
-    # # Vector size
-    # one_vector = [1.0 for i in range(d)]
-    # vector_size = Function(V_brok).project(as_vector(one_vector))
-    #
-    # # Make final coordinate fields
-    # coordinates = [Function(V_brok) for i in range(d)]
-    #
-    # # x_i = x_i*(v_x + v_y + v_z) / (v_x + v_y + v_z)
-    # for i in range(d):
-    #     coordinates[i].dat.data[:] = (ith_coord_field[i].dat.data[:] /
-    #                                   vector_size.dat.data[:])
-    # import pdb; pdb.set_trace()
 
     ij_coord_vector = [[[0.0 for i in range(d)] for j in range(d)] for k in range(d)]
     ij_coord_field = [[Function(V_brok) for i in range(d)] for j in range(d)]
@@ -514,14 +507,7 @@ def HDiv_Coords(V):
     # Project the coordinates into fields
     for i in range(d):
         for j in range(d):
-            surface_project(ij_coord_field[i][j], as_vector(ij_coord_vector[i][j]))
-
-    # Find signs of vectors
-    coord_signs = np.zeros((d, num_dofs))
-    for i in range(d):
-        coord_signs[i][:] = 1.0
-        for j in range(d):
-            coord_signs[i][:] *= np.sign(ij_coord_field[i][j].dat.data[:])
+            ij_coord_field[i][j].project(as_vector(ij_coord_vector[i][j]))
 
     # Find magnitude of coordinates
     coordinates = [Function(V_brok) for i in range(d)]
@@ -542,67 +528,29 @@ def HDiv_Coords(V):
 
     # Project one vectors into i areas
     for i in range(d):
-        surface_project(i_areas[i], as_vector(one_vectors[i]))
+        i_areas[i].project(as_vector(one_vectors[i]))
         # Add contribution to obtain total area
         areas[:] += i_areas[i].dat.data[:] ** 2
     areas[:] = np.sqrt(areas[:])
 
-    # Combine these to obtain the coordinates
+    # Find signs of vectors
+    coord_signs = np.zeros((d, num_dofs))
+    # Make an array of all areas
+    all_areas = np.zeros((d, num_dofs))
     for i in range(d):
-        coordinates[i].dat.data[:] *= (coord_signs[i][:] / areas[:])
+        all_areas[i,:] = i_areas[i].dat.data[:]
 
+    for i in range(d):
+        for n in range(num_dofs):
+            # We do sign(coord_field) * sign(area) to get the actual coordinate sign
+            # To avoid issues near zero, use the maximum area value
+            max_index = np.argmax(abs(all_areas[:,n]))
+            coord_signs[i,n] = (np.sign(ij_coord_field[i][max_index].dat.data[n])
+                                 * np.sign(i_areas[max_index].dat.data[n]))
 
-    import pdb; pdb.set_trace()
+    # Combine these to obtain the coordinates
+    if pure_coords:
+        for i in range(d):
+            coordinates[i].dat.data[:] *= (coord_signs[i][:] / areas[:])
 
     return coordinates
-
-
-def surface_project(target_function, rhs_expression):
-    """
-    This projects an expression or function by evaluating along
-    surfaces of the domain. i.e. find the f \in V such that
-    \int dot(\psi, f) dS = \int dot(\psi, g) dS \forall \psi \in V,
-    where g is the right hand side expression/function.
-
-    :arg target_function: the LHS solution.
-    :arg rhs_expression: the RHS expression/function to be evaluated.
-    """
-
-    V = target_function.function_space()
-    Vtrace = FunctionSpace(V.mesh(), "HDiv Trace", degree=1)
-    n = FacetNormal(V.mesh())
-    dl = TestFunction(Vtrace)
-
-    psi = TestFunction(V)
-    trial = TrialFunction(V)
-    l = Function(Vtrace)
-
-    import pdb; pdb.set_trace()
-
-
-    # Get total surface element
-    if V.extruded:
-        dS_int = dS_v + dS_h
-        ds_int = ds_tb + ds_v
-    else:
-        dS_int = dS
-        ds_int = ds
-
-    lhs = (dl('+') * inner(n('+'), target_function('+')) * dS_int +
-           dl('-') * inner(n('-'), target_function('-')) * dS_int +
-           dl * inner(n, target_function) * ds_int)
-    rhs = (dl('+') * inner(n('+'), rhs_expression) * dS_int +
-           dl('-') * inner(n('-'), rhs_expression) * dS_int +
-           dl * inner(n, rhs_expression) * ds_int)
-
-    eqn = lhs - rhs
-
-    prob = NonlinearVariationalProblem(eqn, target_function)
-    solver = NonlinearVariationalSolver(prob)
-    solver.solve()
-
-    # lhs = ((inner(psi('+'), trial('+'))) * dS_int +
-    #        inner(psi, trial) * ds_int)
-    # rhs = inner(psi('+'), rhs_expression) * dS_int + inner(psi, rhs_expression) * ds_int
-
-    # solve(lhs == rhs, target_function)

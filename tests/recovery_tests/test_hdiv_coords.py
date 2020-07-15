@@ -7,7 +7,7 @@ This is tested for:
 
 from firedrake import (PeriodicRectangleMesh, RectangleMesh, as_vector,
                        SpatialCoordinate, FiniteElement, FunctionSpace,
-                       Function, norm, errornorm, BrokenElement)
+                       Function, norm, errornorm, BrokenElement, VectorFunctionSpace)
 from gusto import *
 import numpy as np
 import pytest
@@ -41,7 +41,7 @@ def test_2D_cartesian_recovery(element, mesh):
 
     x,y = SpatialCoordinate(mesh)
 
-    coord_list = HDiv_Coords(V)
+    coord_list = HDiv_Coords(V, pure_coords=False)
 
     tol = 1e-8
 
@@ -65,6 +65,15 @@ def test_2D_cartesian_recovery(element, mesh):
                             [200.0/9, 0.0],
                             [0.0, 100.0/9],
                             [0.0, 200.0/9]]
+
+    ###
+    DG1_elt = FiniteElement("DG", cell, 1, variant="equispaced")
+    vec_DG1 = VectorFunctionSpace(mesh, DG1_elt)
+    DG_coords = []
+    for coords in coord_list:
+        DG_coords.append(Function(vec_DG1).interpolate(coords))
+
+    import pdb; pdb.set_trace()
 
 
     # Check whether coordinates for first cell are correct

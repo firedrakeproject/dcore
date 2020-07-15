@@ -1,5 +1,5 @@
 """
-A test of the AverageWeightings kernel used for the Averager.
+A test of the NodeMultiplicity kernel used for the Averager.
 """
 
 from firedrake import (IntervalMesh, Function, RectangleMesh,
@@ -84,7 +84,7 @@ def test_average(geometry, mesh):
 
     true_values = setup_values(geometry, true_values)
 
-    kernel = kernels.AverageWeightings(vec_CG1)
+    kernel = kernels.NodeMultiplicity(vec_CG1)
     kernel.apply(weights)
 
     tolerance = 1e-12
