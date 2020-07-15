@@ -145,7 +145,7 @@ class GaussianElimination(object):
             # now loop through rows/columns of A
             """
                 for ii_loop
-                    A_max = fabs(A[ii,ii])
+                    A_max = abs(A[ii,ii])
                     i_max = ii
             """
             # loop to find the largest value in the ii-th column
@@ -154,10 +154,10 @@ class GaussianElimination(object):
                     jj = ii + 1
                     for jj_loop
                         if jj < {nDOFs}
-                            if fabs(A[jj,ii]) > A_max
+                            if abs(A[jj,ii]) > A_max
                                 i_max = jj
                             end
-                            A_max = fmax(A_max, fabs(A[jj,ii]))
+                            A_max = fmax(A_max, abs(A[jj,ii]))
                         end
                         jj = jj + 1
                     end
