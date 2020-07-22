@@ -60,11 +60,11 @@ class Averager(object):
         w = Function(self.V)
 
         if self.weighted:
-            weight_kernel = kernels.AverageWeightings(self.V)
-            weight_kernel.apply(w, self.distances)
+            weight_kernel = kernels.AverageWeightings(self.V, self.v.function_space())
         else:
             weight_kernel = kernels.NodeMultiplicity(self.V)
-            weight_kernel.apply(w)
+
+        weight_kernel.apply(w)
 
         return w
 
@@ -460,97 +460,3 @@ def find_domain_boundaries(mesh):
     on_exterior_DG0.interpolate(on_exterior_CG1)
 
     return on_exterior_DG0
-
-
-def HDiv_Coords(V, pure_coords=True):
-    """
-    Finds the coordinates of DoFs for a lowest order HDiv space.
-    The coordinates are returned as a list of length d of HDiv
-    functions where d is the geometric dimension of the space is d.
-    These functions will be in the broken function space since in
-    general coordinate fields are discontinuous.
-    The coefficients of the ith function in this list are the
-    coordinates in the ith Cartesian coordinate.
-
-    These do not contain Jacobian terms and should not be used
-    in any way other than reading the coefficient values.
-
-    :arg: V: the HDiv function space.
-    :arg pure_coords: If True, returns the coordinates normalised
-                      by the face area / edge length. If False, this
-                      does not happen (meaning that the field can be
-                      interpolated into another space as usual.)
-    """
-
-    # Check for valid spaces
-    if V.extruded:
-        raise NotImplementedError('I am not confident that this will work yet on extruded meshes.')
-    elif V.ufl_element()._short_name == 'RT':
-        raise ValueError('This does not work for RT spaces.')
-
-    # We first break the space, as coordinate field is generally discontinuous
-    mesh = V.mesh()
-    V_brok = FunctionSpace(mesh, BrokenElement(V.ufl_element()))
-    num_dofs = V_brok.dim()
-
-    d = mesh.geometric_dimension()
-    x = SpatialCoordinate(mesh)
-
-    ij_coord_vector = [[[0.0 for i in range(d)] for j in range(d)] for k in range(d)]
-    ij_coord_field = [[Function(V_brok) for i in range(d)] for j in range(d)]
-
-    # Fill ij_coord_vector with coordinate vectors
-    for i in range(d):
-        for j in range(d):
-            ij_coord_vector[i][j][j] = x[i]
-
-    # Project the coordinates into fields
-    for i in range(d):
-        for j in range(d):
-            ij_coord_field[i][j].project(as_vector(ij_coord_vector[i][j]))
-
-    # Find magnitude of coordinates
-    coordinates = [Function(V_brok) for i in range(d)]
-    for i in range(d):
-        coordinates[i].dat.data[:] = 0.0
-        for j in range(d):
-            coordinates[i].dat.data[:] += ij_coord_field[i][j].dat.data[:] ** 2
-        coordinates[i].dat.data[:] = np.sqrt(coordinates[i].dat.data[:])
-
-    # Find areas
-    one_vectors = [[0.0 for i in range(d)] for j in range(d)]
-    i_areas = [Function(V_brok) for i in range(d)]
-    areas = np.zeros(num_dofs)
-
-    # Fill one vectors
-    for i in range(d):
-        one_vectors[i][i] = 1.0
-
-    # Project one vectors into i areas
-    for i in range(d):
-        i_areas[i].project(as_vector(one_vectors[i]))
-        # Add contribution to obtain total area
-        areas[:] += i_areas[i].dat.data[:] ** 2
-    areas[:] = np.sqrt(areas[:])
-
-    # Find signs of vectors
-    coord_signs = np.zeros((d, num_dofs))
-    # Make an array of all areas
-    all_areas = np.zeros((d, num_dofs))
-    for i in range(d):
-        all_areas[i,:] = i_areas[i].dat.data[:]
-
-    for i in range(d):
-        for n in range(num_dofs):
-            # We do sign(coord_field) * sign(area) to get the actual coordinate sign
-            # To avoid issues near zero, use the maximum area value
-            max_index = np.argmax(abs(all_areas[:,n]))
-            coord_signs[i,n] = (np.sign(ij_coord_field[i][max_index].dat.data[n])
-                                 * np.sign(i_areas[max_index].dat.data[n]))
-
-    # Combine these to obtain the coordinates
-    if pure_coords:
-        for i in range(d):
-            coordinates[i].dat.data[:] *= (coord_signs[i][:] / areas[:])
-
-    return coordinates

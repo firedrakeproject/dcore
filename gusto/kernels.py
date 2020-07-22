@@ -4,7 +4,8 @@ These are contained in this file as functions so that they can be tested separat
 """
 
 import numpy as np
-from firedrake import dx
+from firedrake import (dx, CellVolume, Function, VectorElement,
+                       as_vector, FunctionSpace)
 from firedrake.parloops import par_loop, READ, INC, WRITE
 from pyop2 import ON_TOP, ON_BOTTOM
 
@@ -353,38 +354,90 @@ class AverageWeightings(object):
     """
     A kernel for finding the weights for the Averager object.
 
-    :arg V: The FunctionSpace of the target field for the Averager.
+    The weighted average of a function f is calculated as:
+        \sum_i (f_i / w_i)  / \sum_i (1 / w_i)
+    The weights are calculated from the cell volumes, scaled by
+    an optional power:
+        w_i = V_i ^ p
+    If the power is not specified, the default is to use 1/d, where
+    d is the topological dimension of the space.
+    This kernel then returns the values of  w_i * \sum_i (1 / w_i)
+
+    :arg V_cont: The (continuous) FunctionSpace of the target field
+        for the Averager.
+    :arg V_disc: The (discontinuous) FunctionSpace of the original field.
+    :arg power: An optional power to use for calculating the weights
+    from the cell volumes. If not specified, p=1/d where d is the
+    topological dimension.
     """
 
-    def __init__(self, V):
+    def __init__(self, V_cont, V_disc, power=None):
 
-        shapes = {"nDOFs": V.finat_element.space_dimension(),
-                  "dim": np.prod(V.shape, dtype=int)}
+        shapes = {"nDOFs": V_cont.finat_element.space_dimension(),
+                  "dim": np.prod(V_cont.shape, dtype=int)}
 
-        domain = "{{[i, j]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}".format(**shapes)
+        if power is not None:
+            shapes["vol_power"] = power
+        else:
+            shapes["vol_power"] = 1 / V_cont.mesh().topological_dimension()
 
-        # w is the weights
-        instrs = (
+        # have a field to store the sum of all the weights in for normalising
+        self.sum_w = Function(V_cont)
+
+        # get cell volumes in a DG0 space to interpolate into vector function space
+        DG0 = FunctionSpace(V_cont.mesh(), "DG", 0)
+        DG0_volumes = Function(DG0).interpolate(CellVolume(V_cont.mesh()))
+
+        if type(V_cont.ufl_element()) == VectorElement:
+            # make an expression of [vol, vol, ...] of length dim
+            expr = as_vector([DG0_volumes]*shapes["dim"])
+            self.volumes = Function(V_disc).interpolate(expr)
+        else:
+            self.volumes = Function(V_disc).interpolate(DG0_volumes)
+
+        domain = ("""
+                  {{[i, j, ii, jj]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}
+                  """).format(**shapes)
+
+        instrs_sum = (
             """
             for i
                 for j
-                    w[i,j] = w[i,j] + 1.0 / DIST[i,j]
+                    sum_w[i,j] = sum_w[i,j] + 1.0  / pow(vol[i,j], {vol_power})
                 end
             end
-            """)
+            """).format(**shapes)
 
-        self._kernel = (domain, instrs)
+        instrs_weights = (
+            """
+            for i
+                for j
+                    w[i,j] = sum_w[i,j] * pow(vol[i,j], {vol_power})
+                end
+            end
+            """).format(**shapes)
 
-    def apply(self, w, distances):
+        self._kernel_sum = (domain, instrs_sum)
+        self._kernel_weights = (domain, instrs_weights)
+
+    def apply(self, w):
         """
-        Perform the par loop for calculating the weightings for the Averager.
+        Perform the par loop for calculating the weightings for the
+        weighted Averager, using the cell volumes (to some power) as
+        the weights.
 
         :arg w: the field to store the weights in.
-        :arg distances: the distances providing the weights.
         """
 
-        par_loop(self._kernel, dx,
-                 {"w": (w, INC), "DIST": (distances, READ)},
+        par_loop(self._kernel_sum, dx,
+                 {"sum_w": (self.sum_w, INC),
+                  "vol": (self.volumes, READ)},
+                 is_loopy_kernel=True)
+
+        par_loop(self._kernel_weights, dx,
+                 {"w": (w, WRITE),
+                  "sum_w": (self.sum_w, READ),
+                  "vol": (self.volumes, READ)},
                  is_loopy_kernel=True)
 
 
