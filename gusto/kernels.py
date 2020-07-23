@@ -396,7 +396,7 @@ class AverageWeightings(object):
             self.volumes = Function(V_disc).interpolate(DG0_volumes)
 
         domain = ("""
-                  {{[i, j, ii, jj]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}
+                  {{[i, j]: 0 <= i < {nDOFs} and 0 <= j < {dim}}}
                   """).format(**shapes)
 
         instrs_sum = (

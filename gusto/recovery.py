@@ -14,8 +14,7 @@ import ufl
 import numpy as np
 from enum import Enum
 
-__all__ = ["Averager", "Boundary_Method", "Boundary_Recoverer",
-           "Recoverer", "HDiv_Coords"]
+__all__ = ["Averager", "Boundary_Method", "Boundary_Recoverer", "Recoverer"]
 
 
 class Averager(object):
@@ -29,9 +28,15 @@ class Averager(object):
     :arg v: the :class:`ufl.Expr` or
          :class:`.Function` to project.
     :arg v_out: :class:`.Function` to put the result in.
+    :arg weighted: Optional argument for doing a weighted averaging.
+        Can be either a Boolean or a float. The weights are calculated
+        from the `CellVolume` raised to a power. If `True`, then the
+        power is 1/d where d is the `topological_dimension` of the mesh.
+        If a number is offered, then this is the power used. The default
+        value is `False`, in which case no special weightings are applied.
     """
 
-    def __init__(self, v, v_out):
+    def __init__(self, v, v_out, weighted=False):
 
         if isinstance(v, expression.Expression) or not isinstance(v, (ufl.core.expr.Expr, function.Function)):
             raise ValueError("Can only recover UFL expression or Functions not '%s'" % type(v))
@@ -44,7 +49,11 @@ class Averager(object):
         self.v = v
         self.v_out = v_out
         self.V = v_out.function_space()
-        self.weighted = False
+        self.weighted = weighted
+
+        # Check self.weighted is a valid type
+        if not isinstance(self.weighted, (bool, float, int)):
+            raise ValueError('Weighting should be boolean or number, not %s type' % type(self.weighted))
 
         # Check the number of local dofs
         if self.v_out.function_space().finat_element.space_dimension() != self.v.function_space().finat_element.space_dimension():
@@ -57,13 +66,18 @@ class Averager(object):
         """
         Generates a weight function for computing a projection via averaging.
         """
-        w = Function(self.V)
 
-        if self.weighted:
-            weight_kernel = kernels.AverageWeightings(self.V, self.v.function_space())
+        if self.weighted is not False:
+            w = Function(self.v.function_space())
+            # If self.weighted is a number, use this as the power. Otherwise use default
+            # Note that 1 is not a bool type (so can be used as the power)
+            power = None if isinstance(self.weighted, bool) else self.weighted
+            weight_kernel = kernels.AverageWeightings(self.V, self.v.function_space(), power=power)
         else:
+            w = Function(self.V)
             weight_kernel = kernels.NodeMultiplicity(self.V)
 
+        w.dat.zero()
         weight_kernel.apply(w)
 
         return w
@@ -76,6 +90,7 @@ class Averager(object):
         # Ensure that the function being populated is zeroed out
         self.v_out.dat.zero()
         self.average_kernel.apply(self.v_out, self._weighting, self.v)
+
         return self.v_out
 
 
@@ -217,12 +232,12 @@ class Recoverer(object):
     :arg v_out: :class:`.Function` to put the result in. (e.g. a CG1 function)
     :arg VDG: optional :class:`.FunctionSpace`. If not None, v_in is interpolated
          to this space first before recovery happens.
+    :arg weighted: Optional argument for doing a weighted averaging.
     :arg boundary_method: an Enum object, describing the method to use for
          recovering at the boundaries.
-    :arg weighted:
     """
 
-    def __init__(self, v_in, v_out, VDG=None, boundary_method=None):
+    def __init__(self, v_in, v_out, VDG=None, weighted=False, boundary_method=None):
 
         # check if v_in is valid
         if isinstance(v_in, expression.Expression) or not isinstance(v_in, (ufl.core.expr.Expr, function.Function)):
@@ -240,7 +255,7 @@ class Recoverer(object):
 
         self.VDG = VDG
         self.boundary_method = boundary_method
-        self.averager = Averager(self.v, self.v_out)
+        self.averager = Averager(self.v, self.v_out, weighted=weighted)
 
         # check boundary method options are valid
         if boundary_method is not None:
@@ -261,7 +276,7 @@ class Recoverer(object):
                 # this ensures we get the pure function space, not an indexed function space
                 V0 = FunctionSpace(mesh, self.v_in.function_space().ufl_element())
                 CG1 = FunctionSpace(mesh, "CG", 1)
-                eff_coords = find_eff_coords(V0)
+                eff_coords = find_eff_coords(V0, weighted=weighted)
 
                 if V0.extruded:
                     cell = mesh._base_mesh.ufl_cell().cellname()
@@ -294,7 +309,7 @@ class Recoverer(object):
                                                                            method=Boundary_Method.dynamics,
                                                                            eff_coords=eff_coords[i]))
                         # need an extra averager that works on the scalar fields rather than the vector one
-                        self.extra_averagers.append(Averager(v_scalars[i], v_out_scalars[i]))
+                        self.extra_averagers.append(Averager(v_scalars[i], v_out_scalars[i], weighted=weighted))
 
                     # the boundary recoverer needs to be done on a scalar fields
                     # so need to extract component and restore it after the boundary recovery is done
@@ -321,7 +336,7 @@ class Recoverer(object):
         return self.v_out
 
 
-def find_eff_coords(V0):
+def find_eff_coords(V0, weighted=False):
     """
     Takes a function in a field V0 and returns the effective coordinates,
     in a vector DG1 space, of a recovery into a CG1 field. This is for use with the
@@ -330,6 +345,7 @@ def find_eff_coords(V0):
     If V0 is a vector function space, this returns an array of coordinates for
     each component.
     :arg V0: the original function space.
+    :arg weighted: Optional argument for doing a weighted averaging.
     """
 
     mesh = V0.mesh()
@@ -366,12 +382,12 @@ def find_eff_coords(V0):
             # average these to find effective coords in CG1
             V0_coords_in_DG1 = Function(vec_DG1).interpolate(as_vector(x_list))
             eff_coords_in_CG1 = Function(vec_CG1)
-            eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1)
+            eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1, weighted=weighted)
             eff_coords_averager.project()
 
             # obtain these in DG1
             eff_coords_in_DG1 = Function(vec_DG1).interpolate(eff_coords_in_CG1)
-            eff_coords_list.append(correct_eff_coords(eff_coords_in_DG1))
+            eff_coords_list.append(correct_eff_coords(eff_coords_in_DG1, weighted=weighted))
 
         return eff_coords_list
 
@@ -383,20 +399,21 @@ def find_eff_coords(V0):
         # average these to find effective coords in CG1
         V0_coords_in_DG1 = Function(vec_DG1).interpolate(V0_coords)
         eff_coords_in_CG1 = Function(vec_CG1)
-        eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1)
+        eff_coords_averager = Averager(V0_coords_in_DG1, eff_coords_in_CG1, weighted=weighted)
         eff_coords_averager.project()
 
         # obtain these in DG1
         eff_coords_in_DG1 = Function(vec_DG1).interpolate(eff_coords_in_CG1)
 
-        return correct_eff_coords(eff_coords_in_DG1)
+        return correct_eff_coords(eff_coords_in_DG1, weighted=weighted)
 
 
-def correct_eff_coords(eff_coords):
+def correct_eff_coords(eff_coords, weighted=False):
     """
     Correct the effective coordinates calculated by simply averaging
     which will not be correct at periodic boundaries.
     :arg eff_coords: the effective coordinates in vec_DG1 space.
+    :arg weighted: Optional argument for doing a weighted averaging.
     """
 
     mesh = eff_coords.function_space().mesh()
@@ -421,7 +438,7 @@ def correct_eff_coords(eff_coords):
     # obtain different coords in DG1
     DG1_coords = Function(vec_DG1).interpolate(x)
     CG1_coords_from_DG1 = Function(vec_CG1)
-    averager = Averager(DG1_coords, CG1_coords_from_DG1)
+    averager = Averager(DG1_coords, CG1_coords_from_DG1, weighted=weighted)
     averager.project()
     DG1_coords_from_averaged_CG1 = Function(vec_DG1).interpolate(CG1_coords_from_DG1)
     DG1_coords_diff = Function(vec_DG1).interpolate(DG1_coords - DG1_coords_from_averaged_CG1)
