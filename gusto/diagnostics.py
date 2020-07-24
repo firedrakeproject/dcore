@@ -350,7 +350,7 @@ class ShallowWaterPotentialEnstrophy(DiagnosticField):
             D = state.fields("D")
             enstrophy = 0.5*(zeta_abs)**2/D
         else:
-            raise ValueError("Don't know how to compute enstrophy with base_field_name=%s; base_field_name should be %s or %s." % (self.base_field_name, "RelativeVorticity", "AbsoluteVorticity", "PotentialVorticity"))
+            raise ValueError("Don't know how to compute enstrophy with base_field_name=%s; base_field_name should be %s %s or %s." % (self.base_field_name, "RelativeVorticity", "AbsoluteVorticity", "PotentialVorticity"))
         return self.field.interpolate(enstrophy)
 
 

@@ -42,7 +42,7 @@ def setup_IPdiffusion(dirname, vector, DG):
     f = state.fields("f", Space)
     try:
         f.interpolate(fexpr)
-    except NotImplementedError:
+    except AttributeError:
         f.project(fexpr)
 
     mu = 5.
