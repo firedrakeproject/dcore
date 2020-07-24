@@ -79,7 +79,7 @@ def test_3D_cartesian_recovery(geometry, element, mesh, expr):
 
     # horizontal base spaces
     cell = mesh._base_mesh.ufl_cell().cellname()
-    u_hori = FiniteElement(family, cell, 1, variant="equispaced")
+    u_hori = FiniteElement(family, cell, 1)
     w_hori = FiniteElement("DG", cell, 0, variant="equispaced")
 
     # vertical base spaces

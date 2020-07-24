@@ -515,7 +515,7 @@ class State(object):
         if vertical_degree is not None:
             # horizontal base spaces
             cell = mesh._base_mesh.ufl_cell().cellname()
-            S1 = FiniteElement(family, cell, horizontal_degree+1, variant="equispaced")
+            S1 = FiniteElement(family, cell, horizontal_degree+1)
             S2 = FiniteElement("DG", cell, horizontal_degree, variant="equispaced")
 
             # vertical base spaces
@@ -544,7 +544,7 @@ class State(object):
 
         else:
             cell = mesh.ufl_cell().cellname()
-            V1_elt = FiniteElement(family, cell, horizontal_degree+1, variant="equispaced")
+            V1_elt = FiniteElement(family, cell, horizontal_degree+1)
             DG_elt = FiniteElement("DG", cell, horizontal_degree, variant="equispaced")
             DG1_elt = FiniteElement("DG", cell, 1, variant="equispaced")
 
