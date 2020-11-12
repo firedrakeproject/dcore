@@ -4,7 +4,8 @@ The recovery operators used for lowest-order advection schemes.
 from firedrake import (expression, function, Function, FunctionSpace, Projector,
                        VectorFunctionSpace, SpatialCoordinate, as_vector,
                        Interpolator, BrokenElement, interval, Constant,
-                       TensorProductElement, FiniteElement, DirichletBC)
+                       TensorProductElement, FiniteElement, DirichletBC,
+                       VectorElement)
 from firedrake.utils import cached_property
 from gusto import kernels, coord_transforms
 import ufl
@@ -297,12 +298,12 @@ class Recoverer(object):
         # Now set polar transform options
         if polar_transform:
             # First check if polar transform is valid
-            mesh = self.VDG.mesh()
-            if self.VDG.shape != (mesh.geometric_dimension(),):
+            mesh = self.V.mesh()
+            if self.V.shape != (mesh.geometric_dimension(),):
                 raise ValueError("""
                                  The polar transform option is not valid when field
                                  has shape %s and geometric dimension of space is %i
-                                 """ % (self.VDG.shape, mesh.geometric_dimension()))
+                                 """ % (self.V.shape, mesh.geometric_dimension()))
             elif mesh.geometric_dimension() not in [2, 3]:
                 raise ValueError('The polar transform option is not valid for a geometric dimension of %i'
                                  % mesh.geometric_dimension())
@@ -328,7 +329,23 @@ class Recoverer(object):
                                                          self.v_out)
 
             elif mesh.geometric_dimension() == 3:
-                raise NotImplementedError('I need to implement finding the coordinates of RTCF and BDM spaces')
+                xyz_coords = SpatialCoordinate(mesh)
+                rlonlat_coords = coord_transforms.rlonlat_from_xyz(xyz_coords[0], xyz_coords[1], xyz_coords[2])
+
+                try:
+                    coords_v_in_cartesian = Function(vec_V_in).interpolate(as_vector(xyz_coords))
+                except:
+                    coords_v_in_cartesian = Function(vec_V_in).project(as_vector(xyz_coords))
+                coords_VDG_cartesian = Function(self.VDG).interpolate(coords_v_in_cartesian)
+                coords_v_out_polar = Function(vec_V_out).interpolate(as_vector(rlonlat_coords))
+
+                self.convert_to_polar = Interpolator(as_vector(coord_transforms.rlonlat_vector_from_xyz(self.v,
+                                                                                                        coords_VDG_cartesian)),
+                                                     self.v)
+
+                self.convert_to_cartesian = Interpolator(as_vector(coord_transforms.xyz_vector_from_rlonlat(self.v_out,
+                                                                                                            coords_v_out_polar)),
+                                                         self.v_out)
 
 
 

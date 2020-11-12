@@ -391,6 +391,15 @@ class State(object):
                     val=f.topological, name=name+'_ll')
                 self.to_dump_latlon.append(field)
 
+            for diagnostic in self.diagnostic_fields:
+                field = Function(
+                    functionspaceimpl.WithGeometry(
+                        diagnostic.field.function_space(), mesh_ll),
+                        val=diagnostic.field.topological,
+                        name=diagnostic.name+'_ll')
+                self.to_dump_latlon.append(field)
+
+
         # we create new netcdf files to write to, unless pickup=True, in
         # which case we just need the filenames
         if self.output.dump_diagnostics:
