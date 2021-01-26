@@ -13,7 +13,7 @@ from firedrake import (FiniteElement, TensorProductElement, HDiv, DirichletBC,
 import numpy as np
 from gusto.configuration import logger, set_log_handler
 
-__all__ = ["State"]
+__all__ = ["State", "get_latlon_mesh"]
 
 
 class SpaceCreator(object):
